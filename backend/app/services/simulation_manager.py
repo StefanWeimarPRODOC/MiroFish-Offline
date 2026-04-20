@@ -374,10 +374,16 @@ class SimulationManager:
                     file_path=os.path.join(sim_dir, "twitter_profiles.csv"),
                     platform="twitter"
                 )
-            
+
+            # Export full profiles with all fields (incl. source_entity_uuid)
+            profiles_full_path = os.path.join(sim_dir, "profiles_full.json")
+            with open(profiles_full_path, 'w', encoding='utf-8') as f:
+                json.dump([p.to_dict() for p in profiles], f, ensure_ascii=False, indent=2)
+            logger.info(f"Exported {len(profiles)} full profiles to {profiles_full_path}")
+
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 100, 
+                    "generating_profiles", 100,
                     f"Completed, total {len(profiles)} Profiles",
                     current=len(profiles),
                     total=len(profiles)

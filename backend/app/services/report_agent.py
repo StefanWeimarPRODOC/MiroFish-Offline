@@ -2449,7 +2449,58 @@ class ReportManager:
                 f.write(report.markdown_content)
         
         logger.info(f"reportsaved: {report.report_id}")
-    
+
+    @classmethod
+    def export_named_copy(cls, report_id: str, simulation_id: str) -> Optional[str]:
+        """
+        Export a copy of full_report.md with a descriptive filename derived from
+        the simulation requirement and LLM model.
+
+        Filename pattern: {slug}_{llm_model}_{date}.md
+        Example: greendale-car-free-sundays_ministral-3_2026-04-20.md
+        """
+        source = cls._get_report_markdown_path(report_id)
+        if not os.path.exists(source):
+            logger.warning(f"Cannot export named copy: {source} does not exist")
+            return None
+
+        # Read simulation config for requirement text and model name
+        sim_config_path = os.path.join(
+            os.path.dirname(__file__), '../../uploads/simulations',
+            simulation_id, 'simulation_config.json'
+        )
+
+        requirement = simulation_id
+        llm_model = 'unknown-model'
+        if os.path.exists(sim_config_path):
+            try:
+                with open(sim_config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                requirement = config.get('simulation_requirement', requirement)
+                llm_model = config.get('llm_model', llm_model)
+            except Exception as e:
+                logger.warning(f"Could not read simulation config: {e}")
+
+        # Build slug from first ~60 chars of requirement
+        slug = requirement.split('\n')[0].strip()[:60]
+        slug = re.sub(r'[^a-zA-Z0-9\s-]', '', slug)
+        slug = re.sub(r'\s+', '-', slug).strip('-').lower()
+        if not slug:
+            slug = simulation_id
+
+        # Sanitize model name for filename
+        model_slug = re.sub(r'[^a-zA-Z0-9._-]', '-', llm_model)
+
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        filename = f"{slug}_{model_slug}_{date_str}.md"
+
+        dest = os.path.join(cls.REPORTS_DIR, filename)
+
+        import shutil
+        shutil.copy2(source, dest)
+        logger.info(f"Exported named report copy: {filename}")
+        return dest
+
     @classmethod
     def get_report(cls, report_id: str) -> Optional[Report]:
         """getreport"""

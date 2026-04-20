@@ -89,7 +89,8 @@ def generate_report():
                 report = agent.generate_report(progress_callback=progress_callback, report_id=report_id)
                 ReportManager.save_report(report)
                 if report.status == ReportStatus.COMPLETED:
-                    task_manager.complete_task(task_id, result={"report_id": report.report_id, "simulation_id": simulation_id, "status": "completed"})
+                    export_path = ReportManager.export_named_copy(report.report_id, simulation_id)
+                    task_manager.complete_task(task_id, result={"report_id": report.report_id, "simulation_id": simulation_id, "status": "completed", "export_path": export_path})
                 else:
                     task_manager.fail_task(task_id, report.error or "Report generation failed")
             except Exception as e:

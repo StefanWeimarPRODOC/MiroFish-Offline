@@ -1095,7 +1095,7 @@ Return the sub-questions as a JSON list."""
         This method does NOT use GraphStorage — it calls SimulationRunner
         and reads agent profiles from disk.
         """
-        from .simulation_runner import SimulationRunner
+        from .simulation_runner import SimulationRunner, RunnerStatus
 
         logger.info(f"InterviewAgents deep interview (real API): {interview_requirement[:50]}...")
 
@@ -1103,6 +1103,16 @@ Return the sub-questions as a JSON list."""
             interview_topic=interview_requirement,
             interview_questions=custom_questions or []
         )
+
+        # Pre-check: verify simulation environment is actually reachable
+        run_state = SimulationRunner.get_run_state(simulation_id)
+        if run_state and run_state.runner_status in [RunnerStatus.COMPLETED, RunnerStatus.FAILED, RunnerStatus.STOPPED]:
+            logger.warning(f"Simulation {simulation_id} is {run_state.runner_status.value} — skipping interview")
+            result.summary = (
+                f"Simulation environment is no longer running (status: {run_state.runner_status.value}). "
+                f"Agent interviews require a live simulation. Falling back to graph-based analysis."
+            )
+            return result
 
         # Step 1: Read agent profile files
         profiles = self._load_agent_profiles(simulation_id)
@@ -1166,7 +1176,7 @@ Return the sub-questions as a JSON list."""
                 simulation_id=simulation_id,
                 interviews=interviews_request,
                 platform=None,
-                timeout=180.0
+                timeout=45.0
             )
 
             logger.info(f"Interview API returned: {api_result.get('interviews_count', 0)} results, success={api_result.get('success')}")

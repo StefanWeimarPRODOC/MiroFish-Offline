@@ -9,6 +9,7 @@ Optimization improvements:
 """
 
 import json
+import os
 import random
 import time
 from typing import Dict, Any, List, Optional
@@ -197,10 +198,16 @@ class OasisProfileGenerator:
             base_url=self.base_url
         )
 
+        # Ollama num_ctx — prevents prompt truncation for large persona prompts
+        self._num_ctx = int(os.environ.get('OLLAMA_NUM_CTX', '8192'))
+
         # GraphStorage for hybrid search enrichment
         self.storage = storage
         self.graph_id = graph_id
-    
+
+    def _is_ollama(self) -> bool:
+        return '11434' in (self.base_url or '')
+
     def generate_profile_from_entity(
         self,
         entity: EntityNode,
@@ -471,6 +478,10 @@ class OasisProfileGenerator:
 
         for attempt in range(max_attempts):
             try:
+                extra_kwargs = {}
+                if self._is_ollama() and self._num_ctx:
+                    extra_kwargs["extra_body"] = {"options": {"num_ctx": self._num_ctx}}
+
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -478,8 +489,8 @@ class OasisProfileGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # Lower temperature with each retry
-                    # Don't set max_tokens, let LLM generate freely
+                    temperature=0.7 - (attempt * 0.1),  # Lower temperature with each retry
+                    **extra_kwargs
                 )
 
                 content = response.choices[0].message.content

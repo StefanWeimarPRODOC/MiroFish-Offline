@@ -12,6 +12,7 @@ Adopt step-by-step generation strategy to avoid failures from generating too lon
 
 import json
 import math
+import os
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -238,6 +239,12 @@ class SimulationConfigGenerator:
             api_key=self.api_key,
             base_url=self.base_url
         )
+
+        # Ollama num_ctx — prevents prompt truncation for large configs
+        self._num_ctx = int(os.environ.get('OLLAMA_NUM_CTX', '8192'))
+
+    def _is_ollama(self) -> bool:
+        return '11434' in (self.base_url or '')
     
     def generate_config(
         self,
@@ -439,6 +446,10 @@ class SimulationConfigGenerator:
 
         for attempt in range(max_attempts):
             try:
+                extra_kwargs = {}
+                if self._is_ollama() and self._num_ctx:
+                    extra_kwargs["extra_body"] = {"options": {"num_ctx": self._num_ctx}}
+
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -446,8 +457,8 @@ class SimulationConfigGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # Lower temperature with each retry
-                    # Don't set max_tokens, let LLM generate freely
+                    temperature=0.7 - (attempt * 0.1),  # Lower temperature with each retry
+                    **extra_kwargs
                 )
 
                 content = response.choices[0].message.content
