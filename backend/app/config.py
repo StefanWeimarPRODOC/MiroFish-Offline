@@ -35,6 +35,9 @@ class Config:
     # Separate NER model (smaller/faster, used for entity extraction during graph updates)
     NER_MODEL_NAME = os.environ.get('NER_MODEL_NAME', '')  # empty = use LLM_MODEL_NAME
 
+    # Output language for all LLM-generated content (posts, personas, reports, configs)
+    OUTPUT_LANGUAGE = os.environ.get('OUTPUT_LANGUAGE', 'English')
+
     # Neo4j configuration
     NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
     NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')

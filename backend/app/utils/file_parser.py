@@ -172,11 +172,19 @@ def split_text_into_chunks(
         # Try to split at sentence boundaries
         if end < len(text):
             # Find nearest sentence ending
+            found_sep = False
             for sep in ['。', '！', '？', '.\n', '!\n', '?\n', '\n\n', '. ', '! ', '? ']:
                 last_sep = text[start:end].rfind(sep)
                 if last_sep != -1 and last_sep > chunk_size * 0.3:
                     end = start + last_sep + len(sep)
+                    found_sep = True
                     break
+
+            # Fallback: split at last word boundary to avoid mid-word breaks
+            if not found_sep:
+                last_space = text[start:end].rfind(' ')
+                if last_space != -1 and last_space > chunk_size * 0.3:
+                    end = start + last_space + 1
 
         chunk = text[start:end].strip()
         if chunk:

@@ -188,8 +188,10 @@ class OntologyGenerator:
             additional_context
         )
 
+        from ..config import Config
+        lang_hint = f"\n\nIMPORTANT: All descriptions and text content must be in {Config.OUTPUT_LANGUAGE} only."
         messages = [
-            {"role": "system", "content": ONTOLOGY_SYSTEM_PROMPT},
+            {"role": "system", "content": ONTOLOGY_SYSTEM_PROMPT + lang_hint},
             {"role": "user", "content": user_message}
         ]
 

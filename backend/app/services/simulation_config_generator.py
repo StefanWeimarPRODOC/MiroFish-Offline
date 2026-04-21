@@ -595,7 +595,7 @@ Field description:
 - work_hours (int array): Work hours
 - reasoning (string): Brief explanation for this configuration"""
 
-        system_prompt = "You are a social media simulation expert. Return pure JSON format, time configuration must follow Central European Time (CET/CEST, Berlin) schedule habits."
+        system_prompt = f"You are a social media simulation expert. Return pure JSON format, time configuration must follow Central European Time (CET/CEST, Berlin) schedule habits. All text content must be in {Config.OUTPUT_LANGUAGE} only."
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -711,7 +711,7 @@ Return JSON format (no markdown):
     "reasoning": "<brief explanation>"
 }}"""
 
-        system_prompt = "You are an opinion analysis expert. Return pure JSON format. Note poster_type must match available entity types precisely."
+        system_prompt = f"You are an opinion analysis expert. Return pure JSON format. Note poster_type must match available entity types precisely. All text content must be in {Config.OUTPUT_LANGUAGE} only."
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -874,7 +874,7 @@ Return JSON format (no markdown):
     ]
 }}"""
 
-        system_prompt = "You are a social media behavior analysis expert. Return pure JSON, configuration must follow Chinese work schedule habits."
+        system_prompt = f"You are a social media behavior analysis expert. Return pure JSON, configuration must follow Central European Time schedule habits. All text content must be in {Config.OUTPUT_LANGUAGE} only."
 
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)

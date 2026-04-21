@@ -626,7 +626,9 @@ class OasisProfileGenerator:
     
     def _get_system_prompt(self, is_individual: bool) -> str:
         """Get system prompt"""
-        base_prompt = "You are an expert in generating social media user profiles. Generate detailed, realistic personas for opinion simulation that maximize restoration of existing reality. Must return valid JSON format with all string values containing no unescaped newlines. Use English."
+        from ..config import Config
+        lang = Config.OUTPUT_LANGUAGE
+        base_prompt = f"You are an expert in generating social media user profiles. Generate detailed, realistic personas for opinion simulation that maximize restoration of existing reality. Must return valid JSON format with all string values containing no unescaped newlines. ALL output text MUST be in {lang} only. Do not use any other language."
         return base_prompt
     
     def _build_individual_persona_prompt(
@@ -638,6 +640,8 @@ class OasisProfileGenerator:
         context: str
     ) -> str:
         """Build detailed persona prompt for individual entities"""
+        from ..config import Config
+        lang = Config.OUTPUT_LANGUAGE
 
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "None"
         context_str = context[:1500] if context else "No additional context"
@@ -670,7 +674,7 @@ Please generate JSON containing the following fields:
 Important:
 - persona MUST be under 500 words. Be concise and specific, not exhaustive.
 - All field values must be strings or numbers, do not use newlines
-- Use English
+- ALL text content MUST be in {lang} only. Do not use any other language.
 - age must be a valid integer, gender must be "male" or "female"
 """
 
@@ -683,6 +687,8 @@ Important:
         context: str
     ) -> str:
         """Build detailed persona prompt for group/institutional entities"""
+        from ..config import Config
+        lang = Config.OUTPUT_LANGUAGE
 
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "None"
         context_str = context[:1500] if context else "No additional context"
@@ -715,7 +721,7 @@ Please generate JSON containing the following fields:
 Important:
 - persona MUST be under 500 words. Be concise and specific, not exhaustive.
 - All field values must be strings or numbers, no null values allowed
-- Use English
+- ALL text content MUST be in {lang} only. Do not use any other language.
 - age must be integer 30, gender must be string "other"
 """
     
