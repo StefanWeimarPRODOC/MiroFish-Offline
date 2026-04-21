@@ -141,6 +141,44 @@ class SimulationManager:
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     
+    def _create_named_symlink(self, sim_dir: str, simulation_id: str, simulation_requirement: str):
+        """Create a named symlink to the simulation directory for easy identification."""
+        import re
+
+        # Read config to get LLM model name
+        config_path = os.path.join(sim_dir, "simulation_config.json")
+        llm_model = 'unknown-model'
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                llm_model = config.get('llm_model', llm_model)
+            except Exception:
+                pass
+
+        # Build slug from requirement
+        slug = simulation_requirement.split('\n')[0].strip()[:60]
+        slug = re.sub(r'[^a-zA-Z0-9\s-]', '', slug)
+        slug = re.sub(r'\s+', '-', slug).strip('-').lower()
+        if not slug:
+            slug = simulation_id
+
+        model_slug = re.sub(r'[^a-zA-Z0-9._-]', '-', llm_model)
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        link_name = f"{slug}_{model_slug}_{date_str}"
+
+        link_path = os.path.join(self.SIMULATION_DATA_DIR, link_name)
+
+        # Remove existing symlink if present
+        if os.path.islink(link_path):
+            os.unlink(link_path)
+
+        try:
+            os.symlink(simulation_id, link_path)
+            logger.info(f"Created named symlink: {link_name} → {simulation_id}")
+        except Exception as e:
+            logger.warning(f"Could not create named symlink: {e}")
+
     def _save_simulation_state(self, state: SimulationState):
         """Save simulation state to file"""
         sim_dir = self._get_simulation_dir(state.simulation_id)
@@ -452,7 +490,10 @@ class SimulationManager:
             
             logger.info(f"Simulation preparation completed: {simulation_id}, "
                        f"entities={state.entities_count}, profiles={state.profiles_count}")
-            
+
+            # Create named symlink for easy identification
+            self._create_named_symlink(sim_dir, simulation_id, simulation_requirement)
+
             return state
             
         except Exception as e:

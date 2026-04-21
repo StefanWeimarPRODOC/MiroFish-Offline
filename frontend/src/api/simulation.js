@@ -175,7 +175,7 @@ export const getEnvStatus = (data) => {
 export const interviewAgents = (data) => {
   return requestWithRetry(() => service.post('/api/simulation/interview/batch', {
     ...data,
-    timeout: 60  // Cap interview timeout at 60s instead of default 120s
+    timeout: 180  // Allow up to 3 minutes for agent interview (LLM needs time to generate response)
   }), 1, 1000)  // No retries — fail fast with clear error
 }
 
