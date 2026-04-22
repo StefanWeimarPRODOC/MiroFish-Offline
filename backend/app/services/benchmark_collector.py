@@ -174,23 +174,20 @@ def _eval_platform(db_path: str, platform: str) -> Optional[Dict[str, Any]]:
 
         # Duplicate detection (exact)
         content_hashes = [hashlib.md5(c.encode()).hexdigest() for c in contents if c]
-        seen = {}
-        exact_dupes = 0
-        for h in content_hashes:
-            if h in seen:
-                exact_dupes += 1
-            else:
-                seen[h] = True
+        unique_hashes = set(content_hashes)
+        exact_dupes = len(content_hashes) - len(unique_hashes)
 
-        # Near-duplicates (first 50 chars match)
-        prefixes = [c[:50] for c in contents if len(c) >= 50]
-        prefix_seen = {}
-        near_dupes = 0
-        for p in prefixes:
-            if p in prefix_seen:
-                near_dupes += 1
-            else:
-                prefix_seen[p] = True
+        # Near-duplicates (first 50 chars match, excluding already-exact-duplicates)
+        exact_dupe_hashes = set()
+        hash_seen = set()
+        for h in content_hashes:
+            if h in hash_seen:
+                exact_dupe_hashes.add(h)
+            hash_seen.add(h)
+
+        prefixes = [c[:50] for c in contents
+                     if len(c) >= 50 and hashlib.md5(c.encode()).hexdigest() not in exact_dupe_hashes]
+        near_dupes = len(prefixes) - len(set(prefixes))
 
         # Non-target language detection (CJK/Thai characters)
         non_target_count = sum(1 for c in contents if _CJK_THAI_RE.search(c))

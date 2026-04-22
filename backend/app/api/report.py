@@ -102,20 +102,23 @@ def generate_report():
                 if report.status == ReportStatus.COMPLETED:
                     export_path = ReportManager.export_named_copy(report.report_id, simulation_id)
                     task_manager.complete_task(task_id, result={"report_id": report.report_id, "simulation_id": simulation_id, "status": "completed", "export_path": export_path})
-
-                    if benchmark:
-                        try:
-                            benchmark.end_phase("report")
-                            section_count = len(report.outline.sections) if report.outline and report.outline.sections else 0
-                            benchmark.set_metric("report_sections", section_count)
-                            benchmark.save()
-                        except Exception as bench_err:
-                            logger.warning(f"Failed to save report timing: {bench_err}")
                 else:
                     task_manager.fail_task(task_id, report.error or "Report generation failed")
             except Exception as e:
                 logger.error(f"Report generation failed: {str(e)}")
                 task_manager.fail_task(task_id, str(e))
+            finally:
+                if benchmark:
+                    try:
+                        benchmark.end_phase("report")
+                        try:
+                            section_count = len(report.outline.sections) if report.outline and report.outline.sections else 0
+                            benchmark.set_metric("report_sections", section_count)
+                        except NameError:
+                            pass
+                        benchmark.save()
+                    except Exception as bench_err:
+                        logger.warning(f"Failed to save report timing: {bench_err}")
 
         thread = threading.Thread(target=run_generate, daemon=True)
         thread.start()

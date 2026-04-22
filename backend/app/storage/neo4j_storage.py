@@ -5,6 +5,7 @@ Replaces all Zep Cloud API calls with local Neo4j Cypher queries.
 Includes: CRUD, NER/RE-based text ingestion, hybrid search, retry logic.
 """
 
+import re
 import json
 import time
 import uuid
@@ -27,6 +28,19 @@ from .search_service import SearchService
 from . import neo4j_schema
 
 logger = logging.getLogger('mirofish.neo4j_storage')
+
+# Only allow alphanumeric + underscore labels, starting with a letter.
+# Prevents Cypher injection via backtick-breaking in dynamic label queries.
+_SAFE_LABEL_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
+
+
+def _sanitize_label(label: str) -> Optional[str]:
+    """Return label if safe for Cypher backtick quoting, else None."""
+    label = label.strip()
+    if _SAFE_LABEL_RE.match(label):
+        return label
+    logger.warning(f"Rejected unsafe Cypher label: {label!r}")
+    return None
 
 
 class Neo4jStorage(GraphStorage):
@@ -278,18 +292,19 @@ class Neo4jStorage(GraphStorage):
                 actual_uuid = self._call_with_retry(session.execute_write, _merge_entity)
                 entity_uuid_map[ename.lower()] = actual_uuid
 
-                # Add entity type label
-                if etype and etype != "Entity":
+                # Add entity type label (sanitized to prevent Cypher injection)
+                safe_etype = _sanitize_label(etype) if etype and etype != "Entity" else None
+                if safe_etype:
                     try:
-                        def _add_label(tx, _name_lower=ename.lower()):
+                        def _add_label(tx, _name_lower=ename.lower(), _safe_etype=safe_etype):
                             tx.run(
-                                f"MATCH (n:Entity {{graph_id: $gid, name_lower: $nl}}) SET n:`{etype}`",
+                                f"MATCH (n:Entity {{graph_id: $gid, name_lower: $nl}}) SET n:`{_safe_etype}`",
                                 gid=graph_id,
                                 nl=_name_lower,
                             )
                         self._call_with_retry(session.execute_write, _add_label)
                     except Exception as e:
-                        logger.warning(f"Failed to add label '{etype}' to '{ename}': {e}")
+                        logger.warning(f"Failed to add label '{safe_etype}' to '{ename}': {e}")
 
             # Create relations
             for idx, relation in enumerate(relations):
@@ -438,10 +453,13 @@ class Neo4jStorage(GraphStorage):
             return self._call_with_retry(session.execute_read, _read)
 
     def get_nodes_by_label(self, graph_id: str, label: str) -> List[Dict[str, Any]]:
+        safe_label = _sanitize_label(label)
+        if not safe_label:
+            return []
+
         def _read(tx):
-            # Dynamic label in query (safe — label comes from ontology, not user input)
             query = f"""
-                MATCH (n:Entity:`{label}` {{graph_id: $gid}})
+                MATCH (n:Entity:`{safe_label}` {{graph_id: $gid}})
                 RETURN n, labels(n) AS labels
             """
             result = tx.run(query, gid=graph_id)

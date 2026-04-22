@@ -507,7 +507,10 @@ class SimulationManager:
                     benchmark.set_metric("llm_suggested_rounds", int(hours * 60 / mins_per_round))
 
             # Save timing data (will be extended by simulation_runner and report)
-            benchmark.save()
+            try:
+                benchmark.save()
+            except Exception as bench_err:
+                logger.warning(f"Failed to save benchmark timing: {bench_err}")
 
             # Note: Run scripts remain in backend/scripts/ directory, no longer copy to simulation directory
             # When starting simulation, simulation_runner runs scripts from scripts/ directory
