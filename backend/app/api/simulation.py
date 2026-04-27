@@ -3,6 +3,7 @@ Simulation-related API routes
 Step2: Entity reading and filtering, OASIS simulation preparation and execution (fully automated)
 """
 
+import json
 import os
 import traceback
 from flask import request, jsonify, send_file, current_app
@@ -457,6 +458,7 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
+        narrative_mode = data.get('narrative_mode', 'neutral')
         
         # ========== Get GraphStorage（Capture reference before background task starts） ==========
         storage = current_app.extensions.get('neo4j_storage')
@@ -580,6 +582,7 @@ def prepare_simulation():
                     progress_callback=progress_callback,
                     parallel_profile_count=parallel_profile_count,
                     storage=storage,
+                    narrative_mode=narrative_mode,
                 )
                 
                 # Task complete
@@ -1281,6 +1284,52 @@ def get_simulation_config(simulation_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+@simulation_bp.route('/<simulation_id>/config', methods=['PATCH'])
+def patch_simulation_config(simulation_id: str):
+    """
+    Partially update simulation configuration.
+
+    Supports updating discussion_topics/narrative_direction in event_config.
+
+    Request (JSON):
+        {
+            "discussion_topics": "Updated topics text..."
+        }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "Missing request body"}), 400
+
+        manager = SimulationManager()
+        config = manager.get_simulation_config(simulation_id)
+
+        if not config:
+            return jsonify({"success": False, "error": "Configuration not found"}), 404
+
+        if "discussion_topics" in data:
+            topics = data["discussion_topics"]
+            if not isinstance(topics, str):
+                return jsonify({"success": False, "error": "discussion_topics must be a string"}), 400
+            if len(topics) > 10000:
+                return jsonify({"success": False, "error": "discussion_topics too long (max 10000 chars)"}), 400
+            if "event_config" not in config:
+                config["event_config"] = {}
+            config["event_config"]["narrative_direction"] = topics
+            config["event_config"].setdefault("narrative_mode", "neutral")
+
+        sim_dir = manager._get_simulation_dir(simulation_id)
+        config_path = os.path.join(sim_dir, "simulation_config.json")
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+
+        return jsonify({"success": True, "data": config})
+
+    except Exception as e:
+        logger.error(f"Failed to patch config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @simulation_bp.route('/<simulation_id>/config/download', methods=['GET'])

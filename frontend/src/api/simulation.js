@@ -180,6 +180,15 @@ export const interviewAgents = (data) => {
 }
 
 /**
+ * Patch simulation configuration (e.g. update discussion topics)
+ * @param {string} simulationId
+ * @param {Object} data - fields to update
+ */
+export const patchSimulationConfig = (simulationId, data) => {
+  return service.patch(`/api/simulation/${simulationId}/config`, data)
+}
+
+/**
  * Get simulation history list (with project details)
  * Used to display historical projects on home page
  * @param {number} limit - Return count limit

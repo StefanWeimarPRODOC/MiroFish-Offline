@@ -275,6 +275,7 @@ class SimulationManager:
         progress_callback: Optional[callable] = None,
         parallel_profile_count: int = 3,
         storage: 'GraphStorage' = None,
+        narrative_mode: str = "neutral",
     ) -> SimulationState:
         """
         Prepare simulation environment (fully automated)
@@ -469,7 +470,8 @@ class SimulationManager:
                 document_text=document_text,
                 entities=filtered.entities,
                 enable_twitter=state.enable_twitter,
-                enable_reddit=state.enable_reddit
+                enable_reddit=state.enable_reddit,
+                narrative_mode=narrative_mode,
             )
             
             if progress_callback:

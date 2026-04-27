@@ -122,8 +122,11 @@ class EventConfig:
     # Hot topic keywords
     hot_topics: List[str] = field(default_factory=list)
 
-    # Opinion narrative direction
+    # Discussion topics / narrative direction
     narrative_direction: str = ""
+
+    # Narrative mode: "neutral" (emergent dynamics) or "guided" (prescribed direction)
+    narrative_mode: str = "neutral"
 
 
 @dataclass
@@ -257,6 +260,7 @@ class SimulationConfigGenerator:
         enable_twitter: bool = True,
         enable_reddit: bool = True,
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        narrative_mode: str = "neutral",
     ) -> SimulationParameters:
         """
         Intelligently generate complete simulation configuration (step-by-step generation)
@@ -307,8 +311,8 @@ class SimulationConfigGenerator:
 
         # ========== Step 2: Generate event configuration ==========
         report_progress(2, "Generating event configuration and hot topics...")
-        event_config_result = self._generate_event_config(context, simulation_requirement, entities)
-        event_config = self._parse_event_config(event_config_result)
+        event_config_result = self._generate_event_config(context, simulation_requirement, entities, narrative_mode=narrative_mode)
+        event_config = self._parse_event_config(event_config_result, narrative_mode=narrative_mode)
         reasoning_parts.append(f"Event config: {event_config_result.get('reasoning', 'Success')}")
 
         # ========== Step 3-N: Generate agent configurations in batches ==========
@@ -656,7 +660,8 @@ Field description:
         self,
         context: str,
         simulation_requirement: str,
-        entities: List[EntityNode]
+        entities: List[EntityNode],
+        narrative_mode: str = "neutral"
     ) -> Dict[str, Any]:
         """Generate event configuration"""
 
@@ -682,6 +687,14 @@ Field description:
         # Use configured context truncation length
         context_truncated = context[:self.EVENT_CONFIG_CONTEXT_LENGTH]
 
+        # Switch prompt based on narrative mode
+        if narrative_mode == "guided":
+            task_instruction = "- Extract hot topic keywords\n- Describe opinion development direction\n- Design initial post content, **each post must specify poster_type (publisher type)**"
+            json_topic_field = '"narrative_direction": "<description of opinion development direction>",'
+        else:
+            task_instruction = "- Extract hot topic keywords\n- List the key discussion topics and open questions for agents to explore (do NOT prescribe how opinions should develop — let dynamics emerge from agent interactions)\n- Design initial post content, **each post must specify poster_type (publisher type)**"
+            json_topic_field = '"discussion_topics": "<key topics and open questions to explore>",'
+
         prompt = f"""Based on the following simulation requirements, generate event configuration.
 
 Simulation Requirements: {simulation_requirement}
@@ -693,9 +706,7 @@ Simulation Requirements: {simulation_requirement}
 
 ## Task
 Please generate event configuration JSON:
-- Extract hot topic keywords
-- List the key discussion topics and open questions for agents to explore (do NOT prescribe how opinions should develop — let dynamics emerge from agent interactions)
-- Design initial post content, **each post must specify poster_type (publisher type)**
+{task_instruction}
 
 **Important**: poster_type must be selected from the "Available Entity Types" above so initial posts can be assigned to appropriate agents for publishing.
 Example: Official statements should be published by Official/University type, news by MediaOutlet, student opinions by Student type.
@@ -703,7 +714,7 @@ Example: Official statements should be published by Official/University type, ne
 Return JSON format (no markdown):
 {{
     "hot_topics": ["keyword1", "keyword2", ...],
-    "discussion_topics": "<key topics and open questions to explore>",
+    {json_topic_field}
     "initial_posts": [
         {{"content": "post content", "poster_type": "entity type (must select from available types)"}},
         ...
@@ -717,20 +728,22 @@ Return JSON format (no markdown):
             return self._call_llm_with_retry(prompt, system_prompt)
         except Exception as e:
             logger.warning(f"Event config LLM generation failed: {e}, using default configuration")
+            topic_key = "narrative_direction" if narrative_mode == "guided" else "discussion_topics"
             return {
                 "hot_topics": [],
-                "narrative_direction": "",
+                topic_key: "",
                 "initial_posts": [],
                 "reasoning": "Using default configuration"
             }
 
-    def _parse_event_config(self, result: Dict[str, Any]) -> EventConfig:
+    def _parse_event_config(self, result: Dict[str, Any], narrative_mode: str = "neutral") -> EventConfig:
         """Parse event configuration result"""
         return EventConfig(
             initial_posts=result.get("initial_posts", []),
             scheduled_events=[],
             hot_topics=result.get("hot_topics", []),
-            narrative_direction=result.get("discussion_topics", result.get("narrative_direction", ""))
+            narrative_direction=result.get("discussion_topics", result.get("narrative_direction", "")),
+            narrative_mode=narrative_mode
         )
     
     def _assign_initial_post_agents(

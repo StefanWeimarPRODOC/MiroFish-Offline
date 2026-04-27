@@ -346,6 +346,21 @@
         </div>
       </div>
 
+      <!-- Narrative Mode Selection - Before step 04 card -->
+      <div v-if="phase >= 1" class="narrative-mode-section">
+        <div class="mode-header">
+          <span class="section-title">{{ $t('step2.narrativeMode') }}</span>
+          <label class="switch-control">
+            <input type="checkbox" v-model="useGuidedNarrative" :disabled="phase > 1">
+            <span class="switch-track"></span>
+            <span class="switch-label">{{ useGuidedNarrative ? $t('step2.narrativeModeGuided') : $t('step2.narrativeModeNeutral') }}</span>
+          </label>
+        </div>
+        <p class="description" v-if="phase <= 1 && !useGuidedNarrative">{{ $t('step2.narrativeNeutralDesc') }}</p>
+        <p class="description warning" v-else-if="phase <= 1 && useGuidedNarrative">{{ $t('step2.narrativeGuidedDesc') }}</p>
+        <p class="description hint" v-else-if="phase > 1">{{ $t('step2.narrativeModeLockedHint') }}</p>
+      </div>
+
       <!-- Step 04: Initial activation arrangement -->
       <div class="step-card" :class="{ 'active': phase === 3, 'completed': phase > 3 }">
         <div class="card-header">
@@ -367,7 +382,7 @@
           </p>
 
           <div v-if="simulationConfig?.event_config" class="orchestration-content">
-            <!-- Narrative Direction -->
+            <!-- Narrative Direction / Editable Topics -->
             <div class="narrative-box">
               <span class="box-label narrative-label">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="special-icon">
@@ -382,7 +397,20 @@
                 </svg>
                 {{ $t('step2.narrativeGuidanceDirection') }}
               </span>
-              <p class="narrative-text">{{ simulationConfig.event_config.narrative_direction }}</p>
+              <textarea
+                v-model="editedTopics"
+                class="topics-textarea"
+                rows="3"
+                :placeholder="$t('step2.topicsPlaceholder')"
+              ></textarea>
+              <div class="topics-actions">
+                <button class="btn-reset" @click="resetTopics" :disabled="editedTopics === originalTopics">
+                  {{ $t('step2.resetTopics') }}
+                </button>
+                <button class="btn-save" @click="saveTopics" :disabled="editedTopics === originalTopics">
+                  {{ $t('step2.saveTopics') }}
+                </button>
+              </div>
             </div>
 
             <!-- Trending Topics -->
@@ -403,7 +431,7 @@
                   <div class="timeline-marker"></div>
                   <div class="timeline-content">
                     <div class="post-header">
-                      <span class="post-role">{{ post.poster_type }}</span>
+                      <span class="post-role" :class="'role-' + getPosterTypeClass(post.poster_type)">{{ post.poster_type }}</span>
                       <span class="post-agent-info">
                         <span class="post-id">Agent {{ post.poster_agent_id }}</span>
                         <span class="post-username">@{{ getAgentUsername(post.poster_agent_id) }}</span>
@@ -633,12 +661,13 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { 
-  prepareSimulation, 
-  getPrepareStatus, 
+import {
+  prepareSimulation,
+  getPrepareStatus,
   getSimulationProfilesRealtime,
   getSimulationConfig,
-  getSimulationConfigRealtime 
+  getSimulationConfigRealtime,
+  patchSimulationConfig
 } from '../api/simulation'
 
 const props = defineProps({
@@ -667,6 +696,13 @@ const showProfilesDetail = ref(true)
 let lastLoggedMessage = ''
 let lastLoggedProfileCount = 0
 let lastLoggedConfigStage = ''
+
+// Narrative Mode
+const useGuidedNarrative = ref(false)
+
+// Editable Discussion Topics
+const editedTopics = ref('')
+const originalTopics = ref('')
 
 // Simulation Rounds Configuration
 const useCustomRounds = ref(false) // DefaultUse auto-configured rounds
@@ -732,6 +768,40 @@ const totalTopicsCount = computed(() => {
   }, 0)
 })
 
+// Watch for config loading to populate topics
+watch(() => simulationConfig.value?.event_config?.narrative_direction, (val) => {
+  if (val) {
+    editedTopics.value = val
+    originalTopics.value = val
+  }
+}, { immediate: true })
+
+const resetTopics = () => {
+  editedTopics.value = originalTopics.value
+}
+
+const saveTopics = async () => {
+  try {
+    await patchSimulationConfig(props.simulationId, {
+      discussion_topics: editedTopics.value
+    })
+    originalTopics.value = editedTopics.value
+    addLog('Discussion topics updated')
+  } catch (err) {
+    addLog(`Failed to save topics: ${err.message}`)
+  }
+}
+
+const getPosterTypeClass = (type) => {
+  if (!type) return 'default'
+  const t = type.toLowerCase()
+  if (['expert', 'professor', 'faculty'].includes(t)) return 'expert'
+  if (['person', 'student', 'alumni'].includes(t)) return 'person'
+  if (['mediaoutlet', 'journalist'].includes(t)) return 'media'
+  if (['organization', 'governmentagency', 'university', 'ngo', 'company'].includes(t)) return 'org'
+  return 'default'
+}
+
 // Methods
 const addLog = (msg) => {
   emit('add-log', msg)
@@ -783,7 +853,8 @@ const startPrepareSimulation = async () => {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
       use_llm_for_profiles: true,
-      parallel_profile_count: 5
+      parallel_profile_count: 5,
+      narrative_mode: useGuidedNarrative.value ? 'guided' : 'neutral'
     })
     
     if (res.success && res.data) {
@@ -2244,6 +2315,8 @@ onUnmounted(() => {
   font-weight: 700;
   color: #333;
   text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .post-agent-info {
@@ -2360,6 +2433,11 @@ onUnmounted(() => {
 
 .switch-control input:checked + .switch-track::after {
   transform: translateX(16px);
+}
+
+.switch-control input:disabled + .switch-track {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .switch-label {
@@ -2599,4 +2677,63 @@ onUnmounted(() => {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
 }
+
+/* Narrative Mode Section */
+.narrative-mode-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid #E5E5E5;
+  border-radius: 6px;
+}
+.mode-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.description.warning { color: #E65100; }
+
+/* Editable Topics */
+.topics-textarea {
+  width: 100%;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 80px;
+  background: #FAFAFA;
+  box-sizing: border-box;
+}
+.topics-textarea:focus {
+  outline: none;
+  border-color: #FF4500;
+}
+.topics-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+.btn-reset, .btn-save {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid #E0E0E0;
+  background: #FFF;
+  color: #666;
+}
+.btn-save { background: #000; color: #FFF; border-color: #000; }
+.btn-reset:disabled, .btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Poster Type Role Badges */
+.post-role.role-expert { background: #E3F2FD; color: #1565C0; }
+.post-role.role-person { background: #E8F5E9; color: #2E7D32; }
+.post-role.role-media { background: #FFF3E0; color: #E65100; }
+.post-role.role-org { background: #F5F5F5; color: #616161; }
+.post-role.role-default { background: #F5F5F5; color: #666; }
 </style>
