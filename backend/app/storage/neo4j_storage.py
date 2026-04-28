@@ -76,13 +76,53 @@ class Neo4jStorage(GraphStorage):
         self._driver.close()
 
     def _ensure_schema(self):
-        """Create indexes and constraints if they don't exist."""
+        """Create indexes and constraints, migrating vector indexes if dimensions changed."""
+        dimensions = self._embedding.dimensions
+
         with self._driver.session() as session:
-            for query in neo4j_schema.ALL_SCHEMA_QUERIES:
+            # Static schema (constraints + fulltext)
+            for query in neo4j_schema.STATIC_SCHEMA_QUERIES:
                 try:
                     session.run(query)
                 except Exception as e:
                     logger.warning(f"Schema query warning (may already exist): {e}")
+
+            # Check existing vector indexes for dimension mismatch
+            needs_migration = False
+            try:
+                result = session.run("SHOW INDEXES WHERE type = 'VECTOR'")
+                for record in result:
+                    index_config = record.get("indexConfig", {})
+                    index_dim = index_config.get("vector.dimensions")
+                    index_name = record.get("name", "unknown")
+                    if index_dim and index_dim != dimensions:
+                        logger.warning(
+                            f"Embedding dimension mismatch! Index '{index_name}': {index_dim}d, "
+                            f"Model: {dimensions}d ({self._embedding.model})"
+                        )
+                        needs_migration = True
+            except Exception as e:
+                logger.warning(f"Could not check vector indexes: {e}")
+
+            if needs_migration:
+                logger.warning(
+                    "Migrating: Dropping old vector indexes, clearing embeddings... "
+                    "Existing graphs need a new Graph Build for vector search to work."
+                )
+                try:
+                    session.run("DROP INDEX entity_embedding IF EXISTS")
+                    session.run("DROP INDEX fact_embedding IF EXISTS")
+                    session.run("MATCH (n:Entity) WHERE n.embedding IS NOT NULL SET n.embedding = null")
+                    session.run("MATCH ()-[r:RELATION]-() WHERE r.fact_embedding IS NOT NULL SET r.fact_embedding = null")
+                except Exception as e:
+                    logger.error(f"Migration failed: {e}")
+
+            # Create vector indexes with correct dimensions
+            for query in neo4j_schema.get_vector_index_queries(dimensions):
+                try:
+                    session.run(query)
+                except Exception as e:
+                    logger.warning(f"Vector index query warning: {e}")
 
     # ----------------------------------------------------------------
     # Retry wrapper

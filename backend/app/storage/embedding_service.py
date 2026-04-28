@@ -1,8 +1,9 @@
 """
 EmbeddingService — local embedding via Ollama API
 
-Replaces Zep Cloud's built-in embedding with local nomic-embed-text model.
-Uses Ollama's /api/embed endpoint for vector generation (768 dimensions).
+Replaces Zep Cloud's built-in embedding with a local model (configurable).
+Uses Ollama's /api/embed endpoint for vector generation.
+Dimensions are auto-detected from the model or set via EMBEDDING_DIMENSION.
 """
 
 import time
@@ -37,6 +38,23 @@ class EmbeddingService:
         # Using dict instead of lru_cache because lists aren't hashable
         self._cache: dict[str, List[float]] = {}
         self._cache_max_size = 2000
+        self._dimensions: Optional[int] = None
+
+    @property
+    def dimensions(self) -> int:
+        """Return embedding dimensions (auto-detected or from config)."""
+        if self._dimensions is None:
+            if Config.EMBEDDING_DIMENSION > 0:
+                self._dimensions = Config.EMBEDDING_DIMENSION
+            else:
+                self._dimensions = self.detect_dimensions()
+                logger.info(f"Auto-detected embedding dimensions: {self._dimensions}")
+        return self._dimensions
+
+    def detect_dimensions(self) -> int:
+        """Detect embedding dimensions by embedding a test string."""
+        vec = self._request_embeddings(["dimension detection"])[0]
+        return len(vec)
 
     def embed(self, text: str) -> List[float]:
         """
@@ -46,7 +64,7 @@ class EmbeddingService:
             text: Input text to embed
 
         Returns:
-            768-dimensional float vector
+            Float vector (dimensions depend on model)
 
         Raises:
             EmbeddingError: If Ollama request fails after retries
@@ -98,7 +116,7 @@ class EmbeddingService:
                 uncached_texts.append(text)
             else:
                 # Empty text — zero vector
-                results[i] = [0.0] * 1024
+                results[i] = [0.0] * self.dimensions
 
         # Batch-embed uncached texts
         if uncached_texts:
