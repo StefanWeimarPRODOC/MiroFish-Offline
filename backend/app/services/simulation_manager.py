@@ -310,6 +310,10 @@ class SimulationManager:
             sim_dir = self._get_simulation_dir(simulation_id)
             benchmark = BenchmarkCollector(sim_dir)
 
+            # Reset token counters for this pipeline run
+            from ..utils.llm_client import LLMClient
+            LLMClient.reset_token_counts()
+
             # ========== Phase 1: Read and filter entities ==========
             benchmark.start_phase("entity_reading")
             if progress_callback:
@@ -350,6 +354,7 @@ class SimulationManager:
             
             # ========== Phase 2: Generate Agent Profile ==========
             benchmark.start_phase("profile_generation")
+            LLMClient.start_phase("profile_generation")
             total_entities = len(filtered.entities)
 
             if progress_callback:
@@ -436,6 +441,7 @@ class SimulationManager:
                 )
 
             benchmark.end_phase("profile_generation")
+            benchmark.set_metric("profile_generation_tokens", LLMClient.end_phase("profile_generation"))
             benchmark.set_metric("agents_count", len(profiles))
             if total_entities > 0:
                 durations = benchmark.get_durations()
@@ -444,6 +450,7 @@ class SimulationManager:
 
             # ========== Phase 3: LLM intelligent generation of simulation config ==========
             benchmark.start_phase("config_generation")
+            LLMClient.start_phase("config_generation")
             if progress_callback:
                 progress_callback(
                     "generating_config", 0, 
@@ -499,6 +506,7 @@ class SimulationManager:
                 )
 
             benchmark.end_phase("config_generation")
+            benchmark.set_metric("config_generation_tokens", LLMClient.end_phase("config_generation"))
 
             # Extract metrics from generated config
             if hasattr(sim_params, 'time_config') and sim_params.time_config:
@@ -507,6 +515,9 @@ class SimulationManager:
                 mins_per_round = getattr(tc, 'minutes_per_round', 60)
                 if mins_per_round > 0:
                     benchmark.set_metric("llm_suggested_rounds", int(hours * 60 / mins_per_round))
+
+            # Store total token usage
+            benchmark.set_metric("token_usage_total", LLMClient.get_token_counts())
 
             # Save timing data (will be extended by simulation_runner and report)
             try:

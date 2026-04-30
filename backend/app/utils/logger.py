@@ -108,6 +108,48 @@ def get_logger(name: str = 'mirofish') -> logging.Logger:
 logger = setup_logger()
 
 
+def setup_llm_logger() -> logging.Logger:
+    """Set up dedicated LLM call logger with separate log file."""
+    os.makedirs(LOG_DIR, exist_ok=True)
+
+    llm_logger = logging.getLogger('mirofish.llm')
+    llm_logger.setLevel(logging.DEBUG)
+    llm_logger.propagate = False  # LLM calls only in dedicated log file
+
+    if llm_logger.handlers:
+        return llm_logger
+
+    llm_formatter = logging.Formatter(
+        '%(asctime)s|%(funcName)s|%(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S'
+    )
+
+    log_filename = 'llm-calls-' + datetime.now().strftime('%Y-%m-%d') + '.log'
+    file_handler = RotatingFileHandler(
+        os.path.join(LOG_DIR, log_filename),
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(llm_formatter)
+
+    # Warnings/errors also go to console so they appear in main log output
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ))
+
+    llm_logger.addHandler(file_handler)
+    llm_logger.addHandler(console_handler)
+    return llm_logger
+
+
+# Initialize LLM logger
+setup_llm_logger()
+
+
 # Convenience functions
 def debug(msg, *args, **kwargs):
     logger.debug(msg, *args, **kwargs)

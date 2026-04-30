@@ -465,6 +465,10 @@ class SimulationConfigGenerator:
                     **extra_kwargs
                 )
 
+                # Track token usage via LLMClient counters
+                from ..utils.llm_client import LLMClient
+                LLMClient.record_usage(response.usage)
+
                 content = response.choices[0].message.content
                 finish_reason = response.choices[0].finish_reason
 
