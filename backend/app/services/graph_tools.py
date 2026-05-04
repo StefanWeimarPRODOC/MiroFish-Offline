@@ -1162,6 +1162,23 @@ Return the sub-questions as a JSON list."""
         )
         optimized_prompt = f"{INTERVIEW_PROMPT_PREFIX}{combined_prompt}"
 
+        # Re-check simulation status before the expensive batch IPC call.
+        # The pre-check at the top of this method is a snapshot; the LLM helpers
+        # (_select_agents_for_interview, _generate_interview_questions) can take
+        # several minutes during which the simulation may have terminated.
+        run_state = SimulationRunner.get_run_state(simulation_id)
+        if run_state and run_state.runner_status in [RunnerStatus.COMPLETED, RunnerStatus.FAILED, RunnerStatus.STOPPED]:
+            logger.warning(
+                f"Simulation {simulation_id} ended during interview prep "
+                f"(status: {run_state.runner_status.value}) — skipping batch call"
+            )
+            result.summary = (
+                f"Simulation environment stopped during interview preparation "
+                f"(status: {run_state.runner_status.value}). "
+                f"Skipping interview, falling back to graph-based analysis."
+            )
+            return result
+
         # Step 4: Call the real interview API
         try:
             interviews_request = []

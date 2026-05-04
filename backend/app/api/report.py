@@ -37,8 +37,30 @@ def generate_report():
         if not state:
             return jsonify({"success": False, "error": f"Simulation does not exist: {simulation_id}"}), 404
 
+        existing_report = ReportManager.get_report_by_simulation(simulation_id)
+
+        # Concurrent-Lock: prevent parallel report generation for the same simulation.
+        # Even with force_regenerate=True, starting a second run while one is in progress
+        # causes Ollama contention and IPC timeouts.
+        if existing_report and existing_report.status in [
+            ReportStatus.PENDING,
+            ReportStatus.PLANNING,
+            ReportStatus.GENERATING,
+        ]:
+            status_value = existing_report.status.value if hasattr(existing_report.status, 'value') else str(existing_report.status)
+            return jsonify({
+                "success": False,
+                "error": (
+                    f"Report generation already in progress for simulation {simulation_id} "
+                    f"(status: {status_value}). Wait for completion or query progress via "
+                    f"/api/report/generate/status."
+                ),
+                "report_id": existing_report.report_id,
+                "status": status_value,
+                "already_running": True,
+            }), 409
+
         if not force_regenerate:
-            existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
                 return jsonify({"success": True, "data": {
                     "simulation_id": simulation_id,

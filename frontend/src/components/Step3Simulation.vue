@@ -295,7 +295,7 @@ import {
   getRunStatus, 
   getRunStatusDetail
 } from '../api/simulation'
-import { generateReport } from '../api/report'
+import { generateReport, checkReportStatus } from '../api/report'
 
 const props = defineProps({
   simulationId: String,
@@ -316,6 +316,7 @@ const { t } = useI18n()
 
 // State
 const isGeneratingReport = ref(false)
+const existingReportId = ref(null) // Set when a report is already running for this simulation (e.g. after reload)
 const phase = ref(0) // 0: Not started, 1: Running, 2: Completed
 const isStarting = ref(false)
 const isStopping = ref(false)
@@ -375,6 +376,10 @@ const resetAllState = () => {
   startError.value = null
   isStarting.value = false
   isStopping.value = false
+  // Reset report-related state so a previous simulation's report does not leak
+  // into a freshly started one within the same component instance.
+  existingReportId.value = null
+  isGeneratingReport.value = false
   stopPolling()  // Stop any existing polling
 }
 
@@ -646,6 +651,13 @@ const handleNextStep = async () => {
     return
   }
 
+  // If onMounted detected an already-running report, skip the API call and route directly.
+  if (existingReportId.value) {
+    addLog(t('step3.reportAlreadyRunning'))
+    router.push({ name: 'Report', params: { reportId: existingReportId.value } })
+    return
+  }
+
   if (isGeneratingReport.value) {
     addLog(t('step3.reportGenerationSent'))
     return
@@ -671,8 +683,41 @@ const handleNextStep = async () => {
       isGeneratingReport.value = false
     }
   } catch (err) {
+    // Backend returns 409 when a report is already running for this simulation.
+    // The interceptor exposes the response on err.response (axios convention).
+    const status = err?.response?.status
+    const data = err?.response?.data
+    if (status === 409 && data?.already_running && data?.report_id) {
+      existingReportId.value = data.report_id
+      addLog(t('step3.reportAlreadyRunning'))
+      router.push({ name: 'Report', params: { reportId: data.report_id } })
+      return
+    }
     addLog(`✗ Report generation exception: ${err.message}`)
     isGeneratingReport.value = false
+  }
+}
+
+// Detect a concurrently running report (e.g. after page reload during generation).
+// We deliberately do NOT lock the button here: handleNextStep already routes
+// directly to the report view when existingReportId is set, and locking the
+// button would strand the user if the backend report finishes in the
+// background (no polling exists to release the lock).
+const detectExistingReport = async () => {
+  if (!props.simulationId) return
+  try {
+    const res = await checkReportStatus(props.simulationId)
+    if (res.success && res.data?.has_report) {
+      const status = res.data.report_status
+      const inProgress = ['pending', 'planning', 'generating'].includes(status)
+      if (inProgress && res.data.report_id) {
+        existingReportId.value = res.data.report_id
+        addLog(t('step3.reportAlreadyRunning'))
+      }
+    }
+  } catch (err) {
+    // Non-blocking: if the check fails, fall back to the standard flow.
+    console.warn('Report status pre-check failed:', err)
   }
 }
 
@@ -688,6 +733,7 @@ watch(() => props.systemLogs?.length, () => {
 
 onMounted(() => {
   addLog('Step3 Simulation initialization')
+  detectExistingReport()
   if (props.simulationId) {
     doStartSimulation()
   }

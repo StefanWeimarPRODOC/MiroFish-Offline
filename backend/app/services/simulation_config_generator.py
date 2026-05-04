@@ -82,7 +82,7 @@ class AgentActivityConfig:
 
 @dataclass
 class TimeSimulationConfig:
-    """Time simulation configuration (based on Chinese work schedule habits)"""
+    """Time simulation configuration (based on Central European Time / Berlin schedule habits)"""
     # Total simulation time (simulation hours)
     total_simulation_hours: int = 72  # Default 72 hours (3 days)
 
@@ -93,7 +93,7 @@ class TimeSimulationConfig:
     agents_per_hour_min: int = 5
     agents_per_hour_max: int = 20
 
-    # Peak hours (evening 19-22, most active time for Chinese people)
+    # Peak hours (evening 19-22, most active time in Central European workday rhythm)
     peak_hours: List[int] = field(default_factory=lambda: [18, 19, 20, 21, 22])
     peak_activity_multiplier: float = 1.5
 
@@ -566,7 +566,7 @@ class SimulationConfigGenerator:
 Please generate time configuration JSON.
 
 ### Basic principles (for reference only, adjust flexibly based on event nature and participant characteristics):
-- User base is Chinese people, must follow Beijing Time work schedule habits
+- User base lives in Central Europe, must follow Central European Time (CET/CEST, Berlin) work schedule habits
 - 0-5am almost no activity (activity coefficient 0.05)
 - 6-8am gradually active (activity coefficient 0.4)
 - 9-18 work time moderately active (activity coefficient 0.7)
@@ -589,7 +589,7 @@ Example:
     "off_peak_hours": [0, 1, 2, 3, 4, 5],
     "morning_hours": [6, 7, 8],
     "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17],
-    "reasoning": "Explanation of time configuration for this event"
+    "reasoning": "Explanation of time configuration for this event (in {Config.OUTPUT_LANGUAGE})"
 }}
 
 Field description:
@@ -601,9 +601,9 @@ Field description:
 - off_peak_hours (int array): Off-peak hours, late night/early morning
 - morning_hours (int array): Morning hours
 - work_hours (int array): Work hours
-- reasoning (string): Brief explanation for this configuration"""
+- reasoning (string): Brief explanation for this configuration (write in {Config.OUTPUT_LANGUAGE})"""
 
-        system_prompt = f"You are a social media simulation expert. Return pure JSON format, time configuration must follow Central European Time (CET/CEST, Berlin) schedule habits. All text content must be in {Config.OUTPUT_LANGUAGE} only."
+        system_prompt = f"You are a social media simulation expert. Return pure JSON format, time configuration must follow Central European Time (CET/CEST, Berlin) schedule habits. All text content (especially the reasoning field) MUST be written in {Config.OUTPUT_LANGUAGE} only."
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -691,13 +691,33 @@ Field description:
         # Use configured context truncation length
         context_truncated = context[:self.EVENT_CONFIG_CONTEXT_LENGTH]
 
+        lang = Config.OUTPUT_LANGUAGE
+
+        hot_topic_instruction = (
+            f"- Extract hot topic keywords as a MIX of two categories:\n"
+            f"  (a) Domain/technical terms in their original language (e.g. medical drug names, "
+            f"technical acronyms, established product names — keep these untranslated)\n"
+            f"  (b) Descriptive tags written in {lang} (e.g. user-experience descriptors, "
+            f"sentiment categories, thematic groupings)\n"
+            f"  Example for a medical context: [\"GLP-1\", \"Erfahrungsbericht\", \"HbA1c\", \"Nebenwirkungen\"]"
+        )
+
         # Switch prompt based on narrative mode
         if narrative_mode == "guided":
-            task_instruction = "- Extract hot topic keywords\n- Describe opinion development direction\n- Design initial post content, **each post must specify poster_type (publisher type)**"
-            json_topic_field = '"narrative_direction": "<description of opinion development direction>",'
+            task_instruction = (
+                f"{hot_topic_instruction}\n"
+                f"- Describe opinion development direction (in {lang})\n"
+                f"- Design initial post content (in {lang}), **each post must specify poster_type (publisher type)**"
+            )
+            json_topic_field = f'"narrative_direction": "<description of opinion development direction in {lang}>",'
         else:
-            task_instruction = "- Extract hot topic keywords\n- List the key discussion topics and open questions for agents to explore (do NOT prescribe how opinions should develop — let dynamics emerge from agent interactions)\n- Design initial post content, **each post must specify poster_type (publisher type)**"
-            json_topic_field = '"discussion_topics": "<key topics and open questions to explore>",'
+            task_instruction = (
+                f"{hot_topic_instruction}\n"
+                f"- List the key discussion topics and open questions for agents to explore (in {lang}). "
+                f"Do NOT prescribe how opinions should develop — let dynamics emerge from agent interactions.\n"
+                f"- Design initial post content (in {lang}), **each post must specify poster_type (publisher type)**"
+            )
+            json_topic_field = f'"discussion_topics": "<key topics and open questions to explore, in {lang}>",'
 
         prompt = f"""Based on the following simulation requirements, generate event configuration.
 
@@ -715,18 +735,20 @@ Please generate event configuration JSON:
 **Important**: poster_type must be selected from the "Available Entity Types" above so initial posts can be assigned to appropriate agents for publishing.
 Example: Official statements should be published by Official/University type, news by MediaOutlet, student opinions by Student type.
 
+**Output Language:** All textual content (post contents, descriptive hot-topic tags, narrative direction, reasoning) MUST be written in {lang}. Domain/technical terms in `hot_topics` may stay in their original language as documented above.
+
 Return JSON format (no markdown):
 {{
     "hot_topics": ["keyword1", "keyword2", ...],
     {json_topic_field}
     "initial_posts": [
-        {{"content": "post content", "poster_type": "entity type (must select from available types)"}},
+        {{"content": "post content (in {lang})", "poster_type": "entity type (must select from available types)"}},
         ...
     ],
-    "reasoning": "<brief explanation>"
+    "reasoning": "<brief explanation in {lang}>"
 }}"""
 
-        system_prompt = f"You are an opinion analysis expert. Return pure JSON format. Note poster_type must match available entity types precisely. All text content must be in {Config.OUTPUT_LANGUAGE} only."
+        system_prompt = f"You are an opinion analysis expert. Return pure JSON format. Note poster_type must match available entity types precisely. All textual content (post contents, descriptive hot-topic tags, narrative_direction/discussion_topics, reasoning) MUST be written in {lang}. Domain/technical terms inside hot_topics may stay in their original language."
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -866,7 +888,7 @@ Simulation Requirements: {simulation_requirement}
 
 ## Task
 Generate activity configuration for each entity, noting:
-- **Time follows Chinese work schedule**: Almost no activity 0-5am, most active 19-22
+- **Time follows Central European Time (CET/CEST, Berlin) schedule**: Almost no activity 0-5am, most active 19-22
 - **Official institutions** (University/GovernmentAgency): Low activity (0.1-0.3), active during work hours (9-17), slow response (60-240 min), high influence (2.5-3.0)
 - **Media** (MediaOutlet): Medium activity (0.4-0.6), active all day (8-23), fast response (5-30 min), high influence (2.0-2.5)
 - **Individuals** (Student/Person/Alumni): High activity (0.6-0.9), mainly evening activity (18-23), fast response (1-15 min), low influence (0.8-1.2)
@@ -880,7 +902,7 @@ Return JSON format (no markdown):
             "activity_level": <0.0-1.0>,
             "posts_per_hour": <posting frequency>,
             "comments_per_hour": <comment frequency>,
-            "active_hours": [<active hours list, consider Chinese work schedule>],
+            "active_hours": [<active hours list, consider Central European Time schedule>],
             "response_delay_min": <minimum response delay minutes>,
             "response_delay_max": <maximum response delay minutes>,
             "sentiment_bias": <-1.0 to 1.0>,
@@ -930,7 +952,7 @@ Return JSON format (no markdown):
         return configs
     
     def _generate_agent_config_by_rule(self, entity: EntityNode) -> Dict[str, Any]:
-        """Generate single agent configuration based on rules (Chinese work schedule)"""
+        """Generate single agent configuration based on rules (Central European Time / Berlin schedule)"""
         entity_type = (entity.get_entity_type() or "Unknown").lower()
 
         if entity_type in ["university", "governmentagency", "ngo"]:

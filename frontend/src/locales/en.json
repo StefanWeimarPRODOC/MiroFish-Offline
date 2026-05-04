@@ -272,6 +272,7 @@
   "step3.startGeneratingReport": "Start Generating Report",
   "step3.dynamicGraphUpdateEnabled": "Dynamic graph update mode enabled",
   "step3.reportGenerationSent": "Report generation request sent, please wait...",
+  "step3.reportAlreadyRunning": "A report generation is already in progress for this simulation — redirecting to the report view.",
 
   "step3.actionPost": "POST",
   "step3.actionLike": "LIKE",

@@ -648,6 +648,8 @@ class OasisProfileGenerator:
 
         return f"""Generate a concise social media user persona for the entity.
 
+**Output Language:** All free-text fields (bio, persona, profession, interested_topics, example quotes inside persona) MUST be written in {lang}. Only the schema-bound fields gender (English enum) and country (English ISO code) stay in English.
+
 Entity Name: {entity_name}
 Entity Type: {entity_type}
 Entity Summary: {entity_summary}
@@ -658,29 +660,29 @@ Context Information:
 
 Please generate JSON containing the following fields:
 
-1. bio: Social media bio, max 200 characters
-2. persona: Persona description (MUST be 800-1200 words, strict minimum 800 words), must include ALL of the following sections:
+1. bio: Social media bio in {lang}, max 200 characters
+2. persona: Persona description in {lang} (MUST be 800-1200 words, strict minimum 800 words), must include ALL of the following sections (section labels may stay English or be translated, but the content MUST be in {lang}):
    - Background: profession, age, location, key life experiences, education
    - Personality: core traits, temperament, how they handle conflict, what makes them unique
    - Core positions: specific views on the topics at hand, how strongly they hold them, what evidence they cite
    - Motivations and triggers: what provokes them to post, what topics they avoid and why
    - Communication Style on Social Media: How they typically write online (short punchy reactions vs. long detailed analyses, formal vs. casual tone, use of emojis/hashtags/slang)
    - Social Media Behavior Patterns: Their typical post length range in words (e.g., "usually writes 5-30 word reactions" or "tends to write 100-250 word analytical posts"), whether they reply often or create original posts
-   - Example quotes: 2-3 characteristic statements this person would make (in quotation marks)
+   - Example quotes: 2-3 characteristic statements this person would make (in quotation marks, written in {lang})
    - Known objections: Arguments or counterpoints they would raise against opposing views
    - Boundaries: Topics or framings they would refuse to engage with, and why
 3. age: Age as number (must be integer)
-4. gender: Gender, must be in English: "male" or "female"
-5. mbti: MBTI type (e.g., INTJ, ENFP)
-6. country: Country (use English, e.g., "US")
-7. profession: Profession
-8. interested_topics: Array of interested topics
+4. gender: Gender, must be in English: "male" or "female" (schema requirement, do not translate)
+5. mbti: MBTI type (e.g., INTJ, ENFP) — international code, keep as Latin letters
+6. country: Country as English ISO code (e.g., "US", "DE") (schema requirement, do not translate)
+7. profession: Profession in {lang}
+8. interested_topics: Array of interested topics in {lang} (domain/technical terms like "GLP-1" or "HbA1c" may stay in original language)
 
 Important:
 - persona MUST be at least 400 words. Aim for 600-800 words. Maximum 1200 words. Cover ALL listed sections in detail.
 - All field values must be strings or numbers, do not use newlines
-- ALL text content MUST be in {lang} only. Do not use any other language.
-- age must be a valid integer, gender must be "male" or "female"
+- ALL free-text content MUST be in {lang} only. Do not use any other language for free text.
+- age must be a valid integer, gender must be "male" or "female", country must be an English ISO code
 """
 
     def _build_group_persona_prompt(
@@ -700,6 +702,8 @@ Important:
 
         return f"""Generate a concise social media account profile for an institutional/group entity.
 
+**Output Language:** All free-text fields (bio, persona, profession, interested_topics, example posts inside persona) MUST be written in {lang}. Only the schema-bound fields gender (fixed enum "other") and country (English ISO code) stay in English.
+
 Entity Name: {entity_name}
 Entity Type: {entity_type}
 Entity Summary: {entity_summary}
@@ -710,29 +714,29 @@ Context Information:
 
 Please generate JSON containing the following fields:
 
-1. bio: Official account bio, max 200 characters
-2. persona: Account profile description (MUST be 600-800 words, strict minimum 400 words), must include ALL of the following sections:
+1. bio: Official account bio in {lang}, max 200 characters
+2. persona: Account profile description in {lang} (MUST be 600-800 words, strict minimum 400 words), must include ALL of the following sections (section labels may stay English or be translated, but the content MUST be in {lang}):
    - Organization overview: What this entity is, its core function, size, and sphere of influence
    - Communication tone and style: formal/informal, data-driven/emotional, how it engages with supporters and critics
    - Official positions: Specific stances on key topics, how firmly held, what evidence or authority they cite
    - Controversy handling: How it responds to criticism, scandals, or opposition — defensive, transparent, dismissive?
    - Social Media Communication Style: How the account typically writes (press-release tone vs. conversational, use of statistics/citations, hashtag usage)
    - Typical Post Patterns: Characteristic post length range in words (e.g., "typically publishes 80-150 word announcements"), format preferences (threads, single paragraphs)
-   - Example posts: 2-3 characteristic statements or announcements this account would publish (in quotation marks)
+   - Example posts: 2-3 characteristic statements or announcements this account would publish (in quotation marks, written in {lang})
    - Red lines: Topics or framings the account would never engage with, and why
    - Engagement patterns: How it interacts with followers, critics, and other organizations
 3. age: Fixed at 30 (virtual age of institutional account)
-4. gender: Fixed at "other" (institutional account)
-5. mbti: MBTI type for account style, e.g., ISTJ for rigorous conservative
-6. country: Country (use English, e.g., "US")
-7. profession: Institutional function description
-8. interested_topics: Array of focus areas
+4. gender: Fixed at "other" (institutional account, schema requirement, do not translate)
+5. mbti: MBTI type for account style, e.g., ISTJ for rigorous conservative — international code, keep as Latin letters
+6. country: Country as English ISO code (e.g., "US", "DE") (schema requirement, do not translate)
+7. profession: Institutional function description in {lang}
+8. interested_topics: Array of focus areas in {lang} (domain/technical terms like product names or established acronyms may stay in original language)
 
 Important:
 - persona MUST be at least 400 words. Aim for 600-800 words. Maximum 1200 words. Cover ALL listed sections in detail.
 - All field values must be strings or numbers, no null values allowed
-- ALL text content MUST be in {lang} only. Do not use any other language.
-- age must be integer 30, gender must be string "other"
+- ALL free-text content MUST be in {lang} only. Do not use any other language for free text.
+- age must be integer 30, gender must be string "other", country must be an English ISO code
 """
     
     def _generate_profile_rule_based(

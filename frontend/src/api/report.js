@@ -17,6 +17,16 @@ export const getReportStatus = (reportId) => {
 }
 
 /**
+ * Check if a report exists for the given simulation and return its status.
+ * Used by the frontend to detect concurrently running report generations
+ * after a page reload (defense in depth for the backend 409 lock).
+ * @param {string} simulationId
+ */
+export const checkReportStatus = (simulationId) => {
+  return service.get(`/api/report/check/${simulationId}`)
+}
+
+/**
  * Get Agent log (incremental)
  * @param {string} reportId
  * @param {number} fromLine - Start from which line

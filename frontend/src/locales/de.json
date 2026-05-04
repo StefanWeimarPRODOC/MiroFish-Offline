@@ -272,6 +272,7 @@
   "step3.startGeneratingReport": "Berichterstellung starten",
   "step3.dynamicGraphUpdateEnabled": "Dynamischer Graph-Aktualisierungsmodus aktiviert",
   "step3.reportGenerationSent": "Berichterstellungsanfrage gesendet, bitte warten...",
+  "step3.reportAlreadyRunning": "Eine Berichterstellung für diese Simulation läuft bereits — Weiterleitung zur Berichtsansicht.",
 
   "step3.actionPost": "BEITRAG",
   "step3.actionLike": "LIKE",
