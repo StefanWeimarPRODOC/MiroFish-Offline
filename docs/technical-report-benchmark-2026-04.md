@@ -44,7 +44,7 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 
 ## 2. Projekt-Fortschritt: Ticket-Übersicht
 
-### 2.1 Erledigte Tickets (13 von 18)
+### 2.1 Erledigte Tickets (15 von 21)
 
 #### Kritische Bugs behoben
 
@@ -53,6 +53,7 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | MIR-5 | Graph-Memory-Updater DI-Bug | `storage`-Parameter in `start_simulation()` durchgereicht. Graph-Memory-Updates waren zuvor stumm deaktiviert. |
 | MIR-6 | Report-Agent Interview-Timeout | IPC-Timeout von 180s auf robustes Retry-Pattern umgestellt. Report-Sections fallen nicht mehr auf Force-Generate zurück. |
 | MIR-7 | Chunker splittet mitten im Wort | `rfind(' ')`-Fallback in `file_parser.py` implementiert. Verhindert Wortfragmente als Graph-Entities. |
+| MIR-23 | Report-Agent Interview-Tool blockiert + Concurrent-Lock | Backend 409-Lock für Status `[PENDING, PLANNING, GENERATING]` (greift auch bei `force_regenerate=true`); Re-Check Sim-Status direkt vor `interview_agents_batch` (Snapshot-Pre-Check reicht nicht bei minutenlangen LLM-Helpern); Frontend-Defense-in-Depth via `detectExistingReport()` in `Step3Simulation.vue:onMounted` (Reload-Resilienz) + neuer i18n-Key `step3.reportAlreadyRunning`. |
 
 #### Simulationsqualität verbessert
 
@@ -78,6 +79,7 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | Ticket | Titel | Was wurde gemacht |
 |--------|-------|-------------------|
 | MIR-18 | Sprachsteuerung & i18n | Phase 1: `OUTPUT_LANGUAGE` in allen LLM-Prompts. Phase 2: vue-i18n mit 429 Strings (EN/DE), Sprach-Selector im UI mit localStorage-Persistenz. Fremdsprach-Drift von 8.8% auf 0.0% reduziert. |
+| MIR-24 | i18n Phase 3 — Pro-Feld OUTPUT_LANGUAGE-Verstärkung | System-Prompt-only Strategie reichte nicht: Personas, Initial Posts, Reasoning-Felder und Hot Topics blieben trotz `OUTPUT_LANGUAGE=Deutsch` englisch. Fix: Pro Feld im JSON-Schema-Beispiel `(in {OUTPUT_LANGUAGE})` anhängen, System-Prompt am Anfang UND Ende des Prompts wiederholen. **Hot-Topic-Differenzierung:** Fachbegriffe (`SGLT2`, `GLP-1`, `HbA1c`) bleiben original, descriptive Tags (`Nebenwirkungen`, `Kosteneffizienz`) in Zielsprache. **Schema-Pflichtfelder** (`gender`, `country`, `mbti`) bewusst englisch gelassen — OASIS-Schema-Pflicht. CET-Korrektur an 5 Stellen in `simulation_config_generator.py` (Beijing/Chinese → CET/Berlin) als Begleit-Fix. |
 
 #### Observability & Logging
 
@@ -86,13 +88,20 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | MIR-21 | Token-Counting Pipeline | `response.usage` aus allen LLM-Calls ausgelesen, pro Phase aggregiert (profile_generation, config_generation), in `timing.json` gespeichert. `LLMClient.record_usage()` als öffentliche API für externe Caller. |
 | MIR-13 | LLM Call Logging | Dedizierte Log-Datei `llm-calls-YYYY-MM-DD.log` mit Per-Call-Metriken (Modell, Temperature, Duration, Tokens, Thinking-Stripped). `propagate=False` hält Debug-Output aus dem Haupt-Log, Warnings gehen weiterhin an Console. |
 
-### 2.2 Offene Tickets (3)
+### 2.2 Offene Tickets (10)
 
 | Ticket | Titel | Prio | Beschreibung |
 |--------|-------|------|-------------|
 | MIR-19 | Model Selection Guide | Medium | Benchmark-Datenbank, Complexity-Matrix (Seed-Metriken → Modell-Empfehlung), automatische Seed-Analyse. |
 | MIR-20 | Agent-Chat Fortschrittsanzeige | Low | Spinner/Typing-Indicator während Agent "nachdenkt" (2-3 Min bei 32b-Modellen). |
 | MIR-15 | Auto-Run Pipeline / Headless Mode | Low | Kurzfristig: Auto-Proceed nach Graph-Build. Langfristig: Vollständiger Headless-Modus für Batch-Runs. |
+| MIR-25 | `requestWithRetry` retried 4xx-Antworten | Low | 7s Verzögerung bei 409-Lock aus MIR-23, weil der globale Retry-Wrapper alle Fehler 3× versucht. Fix: 4xx-Status nicht retryen. Datei: `frontend/src/api/index.js:54-65`. |
+| MIR-26 | Ollama Modell-Eviction zwischen LLM- und Embedding-Calls | Medium | `qwen2.5:32b` wird trotz `MAX_LOADED_MODELS=3` aus dem RAM evictet (ollama ps zeigt `Stopping...`). ~80s/Persona statt ~10-30s. Fix: Pro-Request `keep_alive: 30m` im LLM-Client. |
+| MIR-27 | Persona-Routing: Custom Entity-Types defaulten zu Group | Medium | Custom Entity-Types aus Ontologie-Generierung (`DiabetesPatient`, `Diabetologist`, `KOLDiabetology`, ...) fallen durch beide hardcoded Listen → werden implizit als Group behandelt. Persons bekommen Account-Profil-Texte. Fix: Heuristische Erweiterung + Pflicht-`cardinality`-Feld in Ontology-Generation. |
+| MIR-28 | LLM-Compliance-Drift bei Persona-Sektionen | Medium | qwen2.5:32b ignoriert in ~1/3 der Fälle "MUST include ALL sections, 600-800 words" und liefert nur Mini-Absatz statt 9 Sektionen. Fix: Output-Length-Validierung im Backend mit Re-Prompt. |
+| MIR-29 | Report-Agent: englischer Drift trotz `OUTPUT_LANGUAGE=Deutsch` | Medium | Report-Sektionen ~10-15% englisch trotz deutscher Source-Daten. Quelle A (Seed-Headings) verschwindet mit deutschen Seeds; Quelle B (Rückübersetzungen aus deutschen Posts) ist eigener Bug. MIR-24 hat den Report-Agent nicht angefasst. |
+| MIR-30 | Wortgleiche Doppel-Posts in OASIS-Simulation | Low | Agent postet zeichengenau gleichen Text in verschiedenen Runden. Vermutlich OASIS/CAMEL-AI-internes Caching/Temperature-Problem. Workaround unklar — eventuell Upstream-Issue. |
+| MIR-31 | Cypher-Label-Sanitize zu rigide | Low | Multi-Word- und Mixed-Lang-Labels werden vom Sanitize-Regex abgewiesen statt normalisiert. 3 valide Entities pro Run gehen verloren. Fix: Normalisieren statt rejecten. |
 
 ---
 
@@ -125,6 +134,8 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | **Kein Performance-Tracking** | Pipeline-Zeiten nur in Container-Logs, gehen bei Restart verloren | `timing.json` + `content_evaluation.json` automatisch pro Run | MIR-17 |
 | **3 separate LLM-Call-Stellen** | `llm_client.py` (zentral), `simulation_config_generator.py` und `oasis_profile_generator.py` (eigene OpenAI-Clients). Konfigurationsänderungen (num_ctx, think, extra_body) mussten an 3 Stellen repliziert werden. | `extra_body` mit `num_ctx` in allen 3 Stellen durchgereicht | pre-ticket → MIR-14 |
 | **Kein LLM-Debug-Logging** | LLM-Calls nur über Ollama-Server-Logs (`~/.ollama/logs/server.log`) sichtbar, die keine Prompts/Antworten zeigen. Fehlerdiagnose bei leeren Antworten extrem erschwert. | Request/Response-Logging im `LLMClient`: Modell, Timing, Antwortlänge (raw vs clean), ob Thinking-Tags gestrippt wurden | pre-ticket → MIR-13 |
+| **Englische Texte trotz `OUTPUT_LANGUAGE=Deutsch`** in Personas, Configs, Initial Posts, Reasoning-Feldern | System-Prompt-only Strategie reicht nicht — das LLM ignoriert globale Sprachvorgaben, wenn der Prompt-Body komplett englisch ist und keine Feld-spezifischen Verstärkungen vorhanden sind | Pro-Feld OUTPUT_LANGUAGE-Verstärkung mit `(in {OUTPUT_LANGUAGE})` direkt im JSON-Schema-Beispiel; System-Prompt-Wiederholung am Anfang UND Ende; Hot-Topic-Differenzierung Fachbegriffe vs. descriptive Tags; Schema-Pflichtfelder (gender, country, mbti) bewusst englisch | MIR-24 |
+| **Parallele Report-Generierung blockiert sich gegenseitig** (Ollama-Konkurrenz, IPC-Timeouts) | Frontend hatte keinen Mount-Check, Backend prüfte nur `COMPLETED`-Status. Bei Browser-Reload während Generierung konnte zweite Generierung gestartet werden. | 3-Schichten-Lock: (1) Backend 409 für Status `[PENDING, PLANNING, GENERATING]` greift IMMER (auch bei `force_regenerate=true`); (2) Frontend `detectExistingReport()` in `onMounted` ruft `/api/report/check/<sim_id>` für Reload-Resilienz; (3) Re-Check vor `interview_agents_batch` weil LLM-Helper Minuten dauern können und der Pre-Check-Snapshot dann veraltet ist | MIR-23 |
 
 ### 3.3 Security & Code-Quality Review
 
@@ -194,8 +205,10 @@ Diese Punkte sind relevant falls Simulab je in einem Mehrbenutzerbetrieb oder ü
 | Qwen 2.5:32b | Q4 | 17 GB | ja+Fixes | 75 | 39 Min | 4h 22min | 9 Min | **5h 09min** |
 | Qwen 2.5:32b | Q8 | 33 GB | nein | 74 | 45 Min | 4h 27min | 17 Min | **5h 29min** |
 | Qwen 2.5:32b | Q4 | 17 GB | ja | 79 | 60 Min | 8h 29min | 14 Min | **9h 28min** * |
+| Qwen 2.5:32b | Q4 | 17 GB | ja+i18n | 56 | 49 Min | (40R abgekürzt) | 12 Min | **60 Min Prepare+Report** ** |
 
 \* 72 Runden statt 40, ohne Narrative Guidance und ohne Initial Posts
+\*\* Run sim_2b5664458700 (2026-05-04) — primär ein i18n-Validierungs-Test (MIR-24), kein Voll-Benchmark. Persona+Config in 49 Min (43.5s/Persona avg, ~1.5× langsamer als sonst), Report in 12 Min. Persona-Phase ohne KEEP_ALIVE-Optimierung — siehe MIR-26 für Eviction-Diagnose.
 
 ### 4.3 Content-Qualität
 
@@ -242,6 +255,22 @@ Die Penalty-Ramps wurden entsprechend angepasst (lineare Abklingzonen: Word 10�
 | Qwen 32b Q8 (ohne MIR-22) | 135 | 90/221 | ~10% |
 | Qwen 32b Q4 (MIR-22, ohne Fixes) | 188 | 70/1275 | ~40% |
 | Qwen 32b Q4 (mit Fixes) | 236 | 42/325 | 81% |
+
+### 4.6 Sprach-Validierung MIR-24 (Pre/Post-Vergleich)
+
+Der Test-Run sim_2b5664458700 (2026-05-04, qwen2.5:32b Q4, OUTPUT_LANGUAGE=Deutsch) validierte die i18n Phase 3 Patches (MIR-24). Sprach-Anteile gemessen via Stop-Word-Heuristik (deutsche vs. englische Indikator-Wörter wie `der/die/das/und/ist` vs. `the/and/is`):
+
+| Output-Typ | Vor MIR-24 (EN-Default) | Nach MIR-24 (Deutsch) | Bewertung |
+|---|---|---|---|
+| Persona `bio` / `persona` / `profession` | 0% deutsch | 100% deutsch | ✅ |
+| `event_config.initial_posts[].content` | 0% deutsch | 100% deutsch | ✅ |
+| `event_config.hot_topics` | 0% deutsch | **Mix** — Fachbegriffe (`SGLT2`, `GLP-1`, `HbA1c`, `GlucoShield®`) original, descriptive Tags (`Nebenwirkungen`, `Kosteneffizienz`) deutsch | ✅ wie spezifiziert |
+| `narrative_direction`, alle `reasoning`-Felder | 0% deutsch | 100% deutsch | ✅ |
+| OASIS-Posts (Twitter+Reddit) | 0% deutsch | ~97% deutsch | ✅ |
+| Report-Outline + Sektionen | 0% deutsch | ~85-90% deutsch | ⚠ Drift via MIR-29 |
+| `gender`, `country`, `mbti` (Schema-Pflicht) | englisch | englisch (`other`/`DE`/`INTJ`) | ✅ wie geplant |
+
+**Beobachtung Report-Drift (MIR-29):** Der Report-Agent enthält ~10-15% englische Passagen — davon kommen ~70% aus den englischen Seed-Dokumenten (Stakeholder-Headings wie *"Office-based diabetologists"* werden zitiert) und ~30% aus Rückübersetzungen deutscher Source-Posts. Letztere sind ein eigener Bug: Der Report-Agent generiert englische Quotes obwohl die Initial-Posts deutsch waren (vermutlich englische Few-Shot-Beispiele im Outline-/Section-Generation-Prompt).
 
 ---
 
@@ -297,6 +326,14 @@ Eine detaillierte Code-Analyse (vor MIR-10) ergab, dass der Config-Generator (7 
 | `influence_weight` | Nein | Dito |
 
 **Implikation:** Die vom Config-Generator erzeugten Sentiment- und Stance-Werte suggerieren Steuerbarkeit, haben aber keinen Effekt auf die Simulation. Die tatsächliche Meinungsdynamik entsteht ausschließlich aus (1) den Persona-Texten, (2) den Initial Posts, und (3) dem Verhalten des Haupt-LLMs während der OASIS-Simulation. Diese Erkenntnis motivierte MIR-10 (Config-Generator Bias reduzieren).
+
+### 5.7 Custom Entity-Types brauchen explizites Routing
+
+Die hardcoded Listen `INDIVIDUAL_ENTITY_TYPES` und `GROUP_ENTITY_TYPES` in `oasis_profile_generator.py:170-179` enthalten nur generische Upstream-Typen (`student, person, university, ngo, ...`). Wenn die Ontology-Phase domänenspezifische Custom-Types erzeugt (z.B. `DiabetesPatient`, `Diabetologist`, `NovaSulinSalesRep`, `KOLDiabetology`), fallen diese durch beide Listen und werden im `else`-Branch implizit als Group behandelt.
+
+Beobachtbare Folge im Test-Run sim_2b5664458700: Eine `DiabetesPatient`-Entity wurde als *"Die Organisation 'DiabetesPatient' ist eine virtuelle Instanz, die sich auf das Engagement von Patienten mit Diabetes konzentriert..."* beschrieben — eine Person bekam ein Account-Profil. Siehe MIR-27.
+
+**Implikation:** Bei Custom-Ontologien ist ein expliziter `cardinality`-Hinweis (Individual vs. Group) erforderlich. Der Workaround heuristischer Substring-Matches (`*patient*` → Individual, `*ag*`/`*verband*` → Group) deckt die häufigsten Fälle ab; die saubere Lösung ist ein `cardinality`-Feld direkt im Ontology-Schema.
 
 ---
 
@@ -518,6 +555,8 @@ LM Studio wurde als Alternative zu Ollama evaluiert, insbesondere wegen der Mög
 
 **num_ctx 49152 (1.5×):** Im Setup-Chat 2 wurde num_ctx von 32768 auf 49152 erhöht (Faktor 1.5). Ministral lief stabil mit 49152 Context bei 19 Agenten — kein OOM, keine leeren Antworten. KV-Cache-Overhead steigt um ~50%, aber bei 128 GB RAM kein Problem. Der höhere Context bietet Reserve für längere Seed-Texte und komplexere Persona-Prompts.
 
+**Modell-Eviction trotz `MAX_LOADED_MODELS=3`:** Beim Test-Run sim_2b5664458700 (qwen2.5:32b, 56 Agents, NUM_PARALLEL=3) wurde das Haupt-LLM zwischen Embedding-Calls (Hybrid-Search während Persona-Generation) und LLM-Calls (eigentliche Persona-Generation) aus dem RAM evictet. `ollama ps` zeigt `Stopping...` für das LLM, während `qwen3-embedding` aktiv läuft. RAM-Druck war NICHT die Ursache (~62 GB von 128 GB belegt — ausreichend Headroom). Wahrscheinliche Ursache: Default `OLLAMA_KEEP_ALIVE=5min` zu kurz für die Pipeline-Cadence + LRU-Verdrängung durch dazwischen liegende Embedding-Calls. Effekt: ~80s pro Persona statt erwartet ~10-30s — bei 56 Personas akkumuliert das auf ~25 Min Persona-Phase statt ~10 Min. Siehe MIR-26 für Optimierungs-Optionen (pro-Request `keep_alive` im LLM-Client als robustester Weg, wie schon `num_ctx` in MIR-14).
+
 **Parallelisierung:** `OLLAMA_NUM_PARALLEL` (Default: 1) und `OLLAMA_MAX_LOADED_MODELS` (Default: 1) können die Pipeline deutlich beschleunigen. Bei 128 GB RAM und Q4-Modell ist `NUM_PARALLEL=4` + `MAX_LOADED_MODELS=3` (Haupt-LLM + phi4-mini NER + qwen3-embedding) realistisch. Geschätzte Persona-Generierung: 30-60 Min → 8-15 Min.
 
 ```bash
@@ -652,6 +691,13 @@ launchctl setenv OLLAMA_MAX_LOADED_MODELS 3
 7. **Thinking-Modelle nicht einsetzbar:** Qwen3.5, Gemma 4, GLM 4.7, DeepSeek-R1 — alle haben Probleme mit JSON-Compliance wenn Thinking deaktiviert wird. Beschränkung auf Non-Thinking-Modelle (Qwen 2.5, Ministral-3).
 8. **Entity-Type-Coverage unvollständig:** Die Post-Length-Guidance deckt nur ~15 Entity-Types explizit ab. Unbekannte Types (z.B. LLM-erfundene wie "Politician", "Researcher") erhalten nur generische Guidance. Ein Default-Fallback ist vorhanden, aber spezifischere Guidance für häufige Types wäre besser.
 9. **Nur Localhost:** Keine Authentifizierung, kein HTTPS, keine Rate-Limiting. Für Mehrbenutzerbetrieb oder Netzwerk-Einsatz müssten Security-Maßnahmen nachgerüstet werden (siehe Abschnitt 3.3).
+10. **Custom Entity-Types fallen durch das Persona-Routing:** Die `INDIVIDUAL_ENTITY_TYPES`- und `GROUP_ENTITY_TYPES`-Listen sind hardcoded und kennen nur generische Upstream-Typen. Domänenspezifische Custom-Types (`DiabetesPatient`, `Diabetologist`, ...) werden implizit als Group behandelt, was bei Persons zu Account-Profil-Texten führt. Siehe MIR-27.
+11. **LLM-Compliance-Drift bei Pflicht-Sektionen:** Selbst bei explizitem *"MUST include ALL sections, 600-800 words"* liefert qwen2.5:32b in ~1/3 der Fälle nur einen Mini-Absatz statt der 9 spezifizierten Sektionen. Output-Validierung mit Re-Prompt fehlt — die existierende Retry-Logik greift nur bei JSON-Parsing-Fehlern, nicht bei zu kurzem aber valid-JSON Output. Siehe MIR-28.
+12. **Report-Agent englischer Drift:** Trotz `OUTPUT_LANGUAGE=Deutsch` enthalten Report-Sektionen 10-15% englische Passagen. Davon sind ~70% Seed-Headings (akzeptabel, verschwindet mit deutschen Seeds), ~30% Rückübersetzungen aus deutschen Source-Posts (eigener Bug — vermutlich englische Few-Shot-Beispiele im Report-Agent-Prompt-Template). MIR-24 hat den Persona/Config-Generator gefixt, aber den Report-Agent nicht angefasst. Siehe MIR-29.
+13. **Modell-Eviction zwischen LLM- und Embedding-Calls:** Trotz `OLLAMA_MAX_LOADED_MODELS=3` wird `qwen2.5:32b` zwischen den Pipeline-Calls aus dem RAM evictet (Default `OLLAMA_KEEP_ALIVE=5min` + LRU-Verdrängung). Effekt: ~80s pro Persona statt ~10-30s. Workaround: pro-Request `keep_alive: 30m` im LLM-Client setzen. Siehe MIR-26.
+14. **Wortgleiche Doppel-Posts:** OASIS/CAMEL-AI-Pipeline erzeugt teilweise zeichengenaue Doppel-Posts desselben Agents in verschiedenen Runden. Vermutlich niedrige Effective-Temperature im OASIS-Internal-Prompt oder fehlender `previous_posts`-Context. Workaround unklar — vermutlich Upstream-Issue. Siehe MIR-30.
+15. **Cypher-Label-Sanitize zu rigide:** Multi-Word- und Mixed-Language-Labels (z.B. `Medication/Drug`, `Typical Advisory Board Problem`, `Key Opinion Leader in Diabetologie`) werden vom `_sanitize_label()`-Regex abgewiesen statt normalisiert. Im Test-Run sim_2b5664458700 gingen 3 valide Entities verloren. Siehe MIR-31.
+16. **`requestWithRetry` retried 4xx-Antworten:** Bei 409-Lock aus MIR-23 wartet das Frontend ~7 Sekunden, weil der globale Retry-Wrapper alle Fehler 3× mit exponentiellem Backoff versucht. Funktional korrekt, aber UX-suboptimal. Siehe MIR-25.
 
 ---
 
@@ -731,6 +777,8 @@ docker compose up -d
 | **Programmatische Keys** | `docs/i18n-audit.md` Abschnitt 5 | Status-Enums, Action-Types, Stage-Keys und Agent-Log-Actions dürfen NIE übersetzt werden. Sie werden per `===` verglichen. Nur Display-Labels übersetzen. |
 | **LLM Token Tracking** | `llm_client.py` | Externe Caller (z.B. Config-Generator der eigenen OpenAI-Client nutzt) verwenden `LLMClient.record_usage(response.usage)` statt direktem Zugriff auf `_token_counts`. |
 | **Embedding-Dimension** | `neo4j_storage.py` | Nie Dimensionen hardcoden. `EmbeddingService.dimensions` auto-detected oder liest `EMBEDDING_DIMENSION` aus Config. Bei Modellwechsel migriert `_ensure_schema()` automatisch. |
+| **OUTPUT_LANGUAGE pro Feld** | `simulation_config_generator.py`, `oasis_profile_generator.py` | System-Prompt-only Strategie reicht nicht. Bei jedem textuellen Feld im JSON-Schema-Beispiel `(in {OUTPUT_LANGUAGE})` anhängen. System-Prompt sowohl am Anfang als auch am Ende des Prompt-Bodies wiederholen. Pflicht-Schema-Felder (`gender`, `country`, `mbti`) bewusst englisch belassen — sie werden von OASIS als Enums geprüft. Siehe MIR-24 Pattern. |
+| **Concurrent-Lock vor LLM-Pipelines** | `report.py` (Pattern, übertragbar) | Vor langen LLM-Pipelines im Backend prüfen, ob bereits ein Job für die gleiche Resource läuft. Status-Set `[PENDING, PLANNING, GENERATING]` → 409 zurückgeben. Frontend `onMounted`-Check (`/api/.../check/<id>`) für Reload-Resilienz. Re-Check vor teuren IPC-Calls (LLM-Helper können Minuten dauern, der Pre-Check-Snapshot ist dann veraltet). Siehe MIR-23 Pattern (3-Schichten-Lock). |
 
 ### 10.6 Neues Modell testen
 
@@ -754,6 +802,9 @@ docker compose up -d
 | sim_ba82ad5d1856 | Ministral-3:14b | Q4 | ja | — | 40 | 76 | 38.1 |
 | sim_fed61e1ac6ed | Qwen 2.5:32b | Q4 | ja | ohne | 72 | 79 | 26.0 |
 | sim_a6ce7cc9e0ba | Qwen 2.5:32b | Q4 | ja | mit | 40 | 75 | 68.1 |
+| sim_2b5664458700 | Qwen 2.5:32b | Q4 | ja | mit i18n+MIR-24 | 40 | 56 | (n.a.)¹ |
+
+¹ Quality Score nicht berechnet, da `content_evaluation.json` für diesen Run nicht generiert wurde — primär als i18n-Validierung gefahren. Sprach-Anteil siehe Abschnitt 4.6.
 
 ---
 
@@ -782,6 +833,16 @@ docker compose up -d
   - Neuer Abschnitt 10.2: Projekt von Grund auf aufsetzen (Step-by-Step Setup-Anleitung)
   - Hardware-Hinweis in 4.1 ergänzt (M4 Max zusätzlich zu M2 Ultra)
   - Abschnittsnummern in Sektion 10 angepasst (10.2→10.3, 10.3→10.4, etc.)
+- **2026-05-05** — Ergänzungen aus Session 2026-05-04/05 (i18n Phase 3 + Concurrent-Lock):
+  - Abschnitt 2.1: MIR-24 (i18n Phase 3 — Pro-Feld OUTPUT_LANGUAGE-Verstärkung mit Hot-Topic-Differenzierung) und MIR-23 (Report-Concurrent-Lock + Interview-Status-Recheck) als erledigt eingetragen
+  - Abschnitt 2.2: 7 neue offene Tickets (MIR-25 requestWithRetry-4xx, MIR-26 Modell-Eviction, MIR-27 Persona-Routing-Default, MIR-28 LLM-Compliance-Drift, MIR-29 Report-Agent EN-Drift, MIR-30 Doppel-Posts, MIR-31 Cypher-Sanitize)
+  - Abschnitt 3.2: Zwei neue Architektur-Verbesserungen (Pro-Feld OUTPUT_LANGUAGE-Verstärkung als Pattern, 3-Schichten Concurrent-Lock)
+  - Abschnitt 4.2 + Anhang: Test-Run sim_2b5664458700 (qwen2.5:32b Q4, OUTPUT_LANGUAGE=Deutsch, 40R, 56 Agents) eingetragen
+  - Neuer Abschnitt 4.6: Sprach-Validierung MIR-24 (Pre/Post-Vergleich pro Output-Typ, mit OASIS-Posts und Report-Drift-Beobachtung)
+  - Neuer Abschnitt 5.7: Custom Entity-Types brauchen explizites Routing (Diagnose `DiabetesPatient` als Group beschrieben)
+  - Abschnitt 7.6: Modell-Eviction-Diagnose ergänzt (KEEP_ALIVE-Hypothese, ~80s/Persona statt ~10-30s)
+  - Abschnitt 9.4: 7 neue Limitationen (Custom-Types-Routing, LLM-Compliance-Drift, Report-EN-Drift, Modell-Eviction, Doppel-Posts, Cypher-Sanitize, requestWithRetry-4xx)
+  - Abschnitt 10.5: Zwei neue Code-Patterns (OUTPUT_LANGUAGE-pro-Feld als MIR-24 Pattern, Concurrent-Lock-vor-Pipelines als MIR-23 Pattern)
 - **2026-04-30** — Ergänzungen aus Setup-Chat 2 (Session 2026-04-19 bis 2026-04-20, Neuer Fork + Modell-Tests):
   - Abschnitt 3.1: Report-Agent Chat Rendering Bug (Step5Interaction.vue Response-Objekt-Unwrapping, pre-ticket)
   - Abschnitt 3.1: Neo4j Dimensions-Mismatch um quantifizierten Impact ergänzt (1 vs 39 related Nodes)
