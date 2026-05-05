@@ -43,7 +43,10 @@ htmlcov/
 
 # Cursor
 .cursor/
-.claude/
+# Claude Code: alles ignorieren AUSSER projekt-spezifische Skills
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # 文档与测试程序
 mydoc/

@@ -53,3 +53,7 @@ Aktueller Stand: v0.2.0 — Core-Pipeline funktioniert. Nächste Meilensteine:
 ## Sprache
 
 Alle Kommunikation auf Deutsch. Code-Kommentare und technische Bezeichner bleiben Englisch.
+
+## Doku-Pflege
+
+Nach jeder Session mit signifikanten Erkenntnissen (neue Bugs, Test-Ergebnisse, Architektur-Befunde, geänderte Tickets) den Skill `/update-tech-report` aufrufen, damit `docs/technical-report-benchmark-2026-04.md` (zentrale Projekt-Doku) aktuell bleibt. Der Skill liest den Report, geht den Chat durch und ergänzt zielgenau mit Changelog-Eintrag — siehe [.claude/skills/update-tech-report.md](.claude/skills/update-tech-report.md).
