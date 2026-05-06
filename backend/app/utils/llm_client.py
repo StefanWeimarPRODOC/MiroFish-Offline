@@ -86,10 +86,13 @@ class LLMClient:
         if response_format:
             kwargs["response_format"] = response_format
 
-        # For Ollama: pass num_ctx via extra_body to prevent prompt truncation
+        # For Ollama: pass num_ctx via extra_body to prevent prompt truncation,
+        # and keep_alive so the model stays in RAM between calls (avoids re-load
+        # latency when embedding requests evict it under LRU pressure).
         if self._is_ollama() and self._num_ctx:
             kwargs["extra_body"] = {
-                "options": {"num_ctx": self._num_ctx}
+                "options": {"num_ctx": self._num_ctx},
+                "keep_alive": Config.OLLAMA_KEEP_ALIVE,
             }
 
         start_time = time.monotonic()

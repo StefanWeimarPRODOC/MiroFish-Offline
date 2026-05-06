@@ -480,7 +480,10 @@ class OasisProfileGenerator:
             try:
                 extra_kwargs = {}
                 if self._is_ollama() and self._num_ctx:
-                    extra_kwargs["extra_body"] = {"options": {"num_ctx": self._num_ctx}}
+                    extra_kwargs["extra_body"] = {
+                        "options": {"num_ctx": self._num_ctx},
+                        "keep_alive": Config.OLLAMA_KEEP_ALIVE,
+                    }
 
                 response = self.client.chat.completions.create(
                     model=self.model_name,

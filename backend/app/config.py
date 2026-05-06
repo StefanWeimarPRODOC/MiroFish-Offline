@@ -48,6 +48,12 @@ class Config:
     EMBEDDING_BASE_URL = os.environ.get('EMBEDDING_BASE_URL', 'http://localhost:11434')
     EMBEDDING_DIMENSION = int(os.environ.get('EMBEDDING_DIMENSION', '0'))  # 0 = auto-detect
 
+    # Ollama keep_alive — how long Ollama keeps the model in RAM after a request.
+    # Default Ollama is 5min, which is too short for our pipeline cadence (LRU eviction
+    # by interleaved embedding calls). 30m keeps the LLM hot across the persona phase.
+    # Values: duration string ("30m", "1h", "0" = unload immediately, "-1" = forever).
+    OLLAMA_KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '30m')
+
     # File upload configuration
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
