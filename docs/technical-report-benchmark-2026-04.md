@@ -489,6 +489,57 @@ Auf dem Papier der vielversprechendste Kandidat: MoE-Architektur (nur 3B aktive 
 
 **Grundregel:** Thinking-Modelle sind für Simulab ungeeignet bis Ollama zuverlässiges `think: false` + `format: json` in Kombination unterstützt.
 
+**Re-Evaluierung Qwen3.6:35b-a3b (2026-05-06)**
+
+Session-Ziel war, den Sweet-Spot Qwen 2.5:32b Q4 ggf. durch ein schnelleres MoE-Modell abzulösen. Vorgehen: Custom-Modelfile `qwen3.6-a3b-nothink` mit nativem `RENDERER qwen3.5`/`PARSER qwen3.5` (siehe `ollama show qwen3.6:35b-a3b --modelfile`), `num_ctx 32768`, SYSTEM-Prompt zur Unterdrückung von Thinking. Direkter Vergleich gegen Ollama API:
+
+| Test | Endpoint | Ergebnis | Latenz |
+|------|----------|----------|--------|
+| Mini-JSON `{"x":42}` | `/v1` mit `response_format` + `think: false` | Sauber, kein `reasoning`-Feld | 0.45-0.7s |
+| Mini-Prompt "sunny day" | `/api/chat` mit `think: false` | Sauber, 21 tokens, 48 tok/s | 0.7s |
+| Mini-Prompt "sunny day" | `/v1` mit nativem Parser, ohne `think:false` | Sauber `content`, **`reasoning`-Feld 732 chars** parallel | 3.5s |
+| **NER-Pipeline-Prompt** (Greendale-Chunk + Ontology + Schema + RULES, 4209 prompt_tokens) | `/v1` mit `think: false` body-root | **content sauber** (8 Entities, 6 Relations korrekt) | **94s warm** |
+| dito, gemessenes `reasoning`-Feld | — | **15.587 chars (~5200 tokens) intern** | — |
+
+**Erkenntnisse:**
+
+1. **ollama/ollama#14645 ist nur teilweise gefixt:** `think: false` im `/v1`-body funktioniert bei trivialen Prompts (~10 % der Pipeline-Last). Bei realen Pipeline-Prompts (Ontology + JSON-Schema + RULES) wird das Flag ignoriert — das Modell denkt trotzdem, der native Parser strippt nur den sichtbaren Output.
+2. **Native `RENDERER`/`PARSER` sind nicht überschreibbar:** Ein erster Modelfile-Versuch mit Custom-Jinja-Template (zur syntaktischen Verhinderung von Thinking-Tokens) wurde von Ollama als Go-Template-Fehler abgewiesen. Ein zweiter Versuch mit Go-Syntax-ChatML baute, **deaktivierte aber den optimierten nativen Pfad** → ~7.6 tok/s effektiv (vs. ~22 tok/s mit nativem Parser).
+3. **Voll-Sim-Hochrechnung:** Bei 94s/Chunk wäre der Greendale-Graph-Build (8 Chunks) ~13 Min (Ministral-Baseline: ~90s — **9× langsamer**). Persona-Phase 70 Personas × ~120s = ~140 Min. Eine Voll-Sim mit Pharma-Seed wäre nicht in vertretbarer Zeit lauffähig.
+4. **Quality-Output ist nicht das Problem:** JSON-Compliance war im NER-Test einwandfrei (8 Entities, 6 Relations korrekt typisiert, Onto­logie-konform). Showstopper ist ausschließlich die effektive Geschwindigkeit durch unsichtbares internes Reasoning.
+
+**Fazit:** Qwen3.6:35b-a3b im aktuellen Ollama (2026-05) bleibt ungeeignet. Nicht wegen JSON-Bugs (gefixt), nicht wegen Thinking-Leakage in `content` (nativer Parser strippt sauber), sondern weil das Modell auch mit `think: false` weiterdenkt sobald der System-Prompt strukturiert ist. Die ~130 tok/s aus Apple-Silicon-Benchmarks gelten nur für triviale Prompts — Pipeline-realistisch sind es ~7-22 tok/s.
+
+**Re-Evaluierung Gemma 4:26b-a4b-it-q4_K_M (2026-05-06)**
+
+Im Anschluss an Qwen3.6 wurde die Q4-Variante von Gemma 4 mit identischer Methodik getestet (`gemma4-q4-nothink`, nativer `RENDERER gemma4`/`PARSER gemma4`, `num_ctx 32768`, SYSTEM-Prompt, `think: false` im `/v1`-body):
+
+| Test | Ergebnis |
+|------|---------|
+| Mini-Prompt "sunny day" | content sauber, **`reasoning`-Feld 732 chars trotz `think:false`** | 4.96s, 209 completion_tokens |
+| Mini-JSON-Prompt | content sauber `{"name":"Alice Smith","age":30}`, **`reasoning`-Feld 333 chars** | 1.88s |
+| **NER-Pipeline-Prompt** (gleicher 4209-Token-Prompt wie Qwen3.6) | **Reasoning-Loop, kein Output nach 11+ Min, manuell abgebrochen** | `expires_at` zeigte Eviction-Versuch, Request blockierte |
+
+**Vergleich Q8 (April 2026) vs. Q4 (Mai 2026):**
+
+| | Q8 (28 GB) | Q4 (17 GB) |
+|---|---|---|
+| NER-Verhalten | 25% Chunk-Verlust nach ~9.5 Min, Modell denkt sich tot | **Voll-Hänger ohne Output nach 11+ Min** |
+| Mini-Prompt | sauber (verbose Reasoning gestrippt) | sauber, aber 732 chars reasoning trotz `think:false` |
+| JSON-Compliance bei Mini | OK | OK |
+| JSON-Compliance bei NER | 5 Fehler / 8 Chunks | nicht getestet (Hänger) |
+
+**Fazit:** Q4 ist **nicht besser**, eher schlechter — der niedrigere Quant scheint die Reasoning-Disziplin zu verstärken, was bei strukturierten Prompts in einen Endlos-Loop kippt. Damit ist die Gemma-4-Familie über alle getesteten Quants und Methoden (think:false, SYSTEM-Prompt, Custom-Template) als ungeeignet bestätigt.
+
+**Konsequenzen für die Modell-Empfehlung:**
+
+- **Sweet-Spot bleibt Qwen 2.5:32b Q4** (Quality Score 68.1, ~5h Voll-Sim, 17 GB RAM).
+- Reasoning-Modelle (Qwen3.5/3.6 A3B, Gemma 4, GLM 4.7, DeepSeek-R1) sind **strukturell ungeeignet** für Simulab-Pipeline-Prompts, unabhängig vom Ollama-Stand.
+- **Pflicht-Test für neue Modelle:** Vor jedem Quick-Bench muss ein NER-Pipeline-Prompt mit Ontology + Schema + RULES gegen das Modell laufen — Mini-Prompt-Tests erkennen das Reasoning-Loop-Risiko nicht.
+- **Open Question:** Existieren echte Non-Reasoning-Instruct-Modelle in der 30-35B Klasse jenseits Qwen 2.5? Mistral Small 24B FP16 ist bereits gepullt aber bisher nicht für Simulab benchmarkt — wäre ein nächster Kandidat falls qwen2.5:32b Q4 limitierend wird.
+
+**Methodischer Hinweis:** Native `RENDERER`/`PARSER`-Direktiven in Ollama-Modelfiles dürfen **nicht** durch Custom-`TEMPLATE`-Overrides ersetzt werden — das deaktiviert den optimierten Inferenz-Pfad und kostet ~3× Geschwindigkeit ohne Reasoning-Disziplin-Gewinn. Modelfile-Anpassungen sollten sich auf `PARAMETER num_ctx`, `PARAMETER temperature` und `SYSTEM` beschränken.
+
 **Gemma 4:26b-a4b-it-q8_0 (28 GB)**
 
 Im Setup-Chat (April 2026) ausführlich getestet mit dem Ziel, Thinking per `think: false` über Ollamas OpenAI-kompatiblen Endpoint (`/v1/chat/completions`) zu deaktivieren.
@@ -850,3 +901,9 @@ docker compose up -d
   - Abschnitt 4.1: Befund dokumentiert dass Upstream keine Demo-Daten enthält
   - Abschnitt 7.3 (Gemma 4): Zweiter Testlauf mit SYSTEM-Prompt-Modelfile-Ansatz dokumentiert — Erkenntnis dass Ollama Thinking auf API-Ebene filtert, Problem ist JSON-Compliance nicht Thinking-Leakage
   - Abschnitt 7.6: num_ctx 49152 (1.5×) Erfahrungswerte ergänzt
+- **2026-05-06** — Ergänzungen aus Session 2026-05-06 (Re-Evaluierung Reasoning-Modelle):
+  - Abschnitt 7.3: Re-Evaluierung Qwen3.6:35b-a3b mit nativem `RENDERER qwen3.5`/`PARSER qwen3.5` und `think: false` über `/v1/chat/completions` — Befund: ollama#14645 nur teilweise gefixt, `think:false` wird bei Pipeline-realistischen Prompts (Ontology + Schema + RULES) ignoriert (15.587 chars Reasoning intern bei 4.2k-Token-Prompt, 94s warm vs. 90s/8 Chunks Ministral-Baseline → 9× langsamer)
+  - Abschnitt 7.3: Re-Evaluierung Gemma 4:26b-a4b-it-q4_K_M mit identischer Methodik — Q4 ist nicht besser sondern schlechter als Q8: NER-Pipeline-Prompt verursacht Reasoning-Loop ohne Output (manuell abgebrochen nach 11+ Min, `expires_at` zeigte Eviction-Versuch trotz aktivem Request); Gemma-4-Familie über alle Quants und Methoden bestätigt ungeeignet
+  - Abschnitt 7.3: Methodischer Hinweis ergänzt — native `RENDERER`/`PARSER`-Direktiven dürfen nicht durch Custom-`TEMPLATE` überschrieben werden (deaktiviert optimierten Inferenz-Pfad, ~3× Geschwindigkeitsverlust ohne Reasoning-Disziplin-Gewinn)
+  - Abschnitt 7.3: Pflicht-Test für neue Modelle festgelegt — vor jedem Quick-Bench muss ein NER-Pipeline-Prompt mit Ontology + JSON-Schema + RULES laufen (Mini-Prompt-Tests erkennen Reasoning-Loop-Risiko nicht); Mistral Small 24B FP16 als nächster Kandidat falls qwen2.5:32b Q4 limitierend wird
+  - Während der Session erstellte Custom-Modelfiles und zugehörige Ollama-Tags (`qwen3.6-a3b-nothink`, `gemma4-q4-nothink`) nach Abschluss wieder entfernt — die Befunde sind hier dokumentiert, künftige Re-Tests nutzen die Original-Pulls (`qwen3.6:35b-a3b`, `gemma4:26b-a4b-it-q4_K_M`) als Basis
