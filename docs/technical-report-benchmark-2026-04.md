@@ -44,7 +44,7 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 
 ## 2. Projekt-Fortschritt: Ticket-Übersicht
 
-### 2.1 Erledigte Tickets (15 von 21)
+### 2.1 Erledigte Tickets (19 von 24)
 
 #### Kritische Bugs behoben
 
@@ -62,6 +62,7 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | MIR-22 | Post-Length-Variation & Persona-Optimierung | Persona-Wort-Limit auf 600-1200 erhöht. 9 Pflicht-Dimensionen pro Persona (inkl. Example Quotes, Known Objections, Boundaries). Post-Length-Guidance pro Entity-Type. Emoji/Hashtag-Dämpfung. Quality Score: 26→68.1. |
 | MIR-10 | Config-Generator Bias reduzieren | Narrative Direction → Discussion Topics (neutral). Frontend-Toggle Neutral/Guided. Editierbare Topics. Initial Posts mit Poster-Type-Badges. Emergente Dynamik statt Self-Fulfilling Prophecy. |
 | MIR-9 | Agent-Aktivitätszeiten | Von chinesischen auf deutsche Zeitzonen (CET/CEST) umgestellt. |
+| MIR-27 | Persona-Routing für Custom Entity-Types | Hardcoded `INDIVIDUAL_ENTITY_TYPES`/`GROUP_ENTITY_TYPES`-Listen ergänzt um Substring- und Suffix-Matching für domänenspezifische Custom-Types. Default-Fallback auf Individual statt Group (Person ist häufigerer Standard-Fall) mit Logger-Warning für unbekannte Types. Erweiterte Listen: Individual `*patient*, *doctor*, *physician*, *researcher*, *scientist*, *kol*` + Suffix `*ist`; Group `*ag, *gmbh, *verband, *kasse, *agency, *foundation, *ltd, *llc`. Behebt Fall, dass `DiabetesPatient` als "Organisation" beschrieben wurde. |
 
 #### Infrastruktur & DX
 
@@ -73,6 +74,9 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | MIR-17 | Pipeline-Timing persistent | `timing.json` + `content_evaluation.json` automatisch pro Run. Phasen-Timing, Content-Qualitätsmetriken, Quality Score. |
 | MIR-11 | Auto-Export Report | Report nach Generierung automatisch als gebündeltes MD in `backend/uploads/`. |
 | MIR-12 | Auto-Export Personas + Configs | Alle Persona-Texte + Activity-Configs als JSON exportiert. Persona-Qualität zwischen Modellen vergleichbar. |
+| MIR-26 | Ollama Modell-Eviction zwischen LLM-/Embedding-Calls | `keep_alive: 30m` pro Request in allen 3 LLM-Call-Stellen (`llm_client.py`, `simulation_config_generator.py`, `oasis_profile_generator.py`) — gleiches Pattern wie MIR-14. Neue Config-Variable `Config.OLLAMA_KEEP_ALIVE` (Default `"30m"`, via `.env` überschreibbar). Verhindert dass das Haupt-LLM zwischen Embedding- und LLM-Calls aus dem RAM evictet wird. Erwartet: Persona-Phase 3-5× schneller. |
+| MIR-31 | Cypher-Label-Sanitize: Normalisieren statt Rejecten | `_sanitize_label()` in `neo4j_storage.py` umgeschrieben: Spaces/Slashes/Bindestriche → Underscore, Diacritics-Mapping (ä→ae, ö→oe, ü→ue, ß→ss), Leading-Digit-Prefix (`L_123Foo`), nur ASCII-Letters/Digits/Underscore im Output. 28 Unit-Tests in `backend/tests/test_neo4j_label_sanitize.py` (17 Normalisierung, 6 None-Returns, 4 Cypher-Injection-Safety, plus Edge-Cases). 3 valide Entities pro Run gehen nicht mehr verloren (`Medication/Drug`, `Typical Advisory Board Problem`, `Key Opinion Leader in Diabetologie`). |
+| MIR-25 | `requestWithRetry` retried 4xx-Antworten | 4xx-Status-Check vor Retry-Pfad in `frontend/src/api/index.js`. Network-Errors und Timeouts werden weiterhin retried. Backend-4xx-Audit (400/404/409) zeigte: alle 4xx im Backend sind Logik-Fehler, keine transienten — kein Risiko durch frühen Throw. 7s-Verzögerung bei 409-Lock aus MIR-23 verschwindet. |
 
 #### Internationalisierung
 
@@ -88,20 +92,19 @@ Die Zeitzonen-Umstellung betrifft die gesamte Simulationskonfiguration: Activity
 | MIR-21 | Token-Counting Pipeline | `response.usage` aus allen LLM-Calls ausgelesen, pro Phase aggregiert (profile_generation, config_generation), in `timing.json` gespeichert. `LLMClient.record_usage()` als öffentliche API für externe Caller. |
 | MIR-13 | LLM Call Logging | Dedizierte Log-Datei `llm-calls-YYYY-MM-DD.log` mit Per-Call-Metriken (Modell, Temperature, Duration, Tokens, Thinking-Stripped). `propagate=False` hält Debug-Output aus dem Haupt-Log, Warnings gehen weiterhin an Console. |
 
-### 2.2 Offene Tickets (10)
+### 2.2 Offene Tickets (9)
 
 | Ticket | Titel | Prio | Beschreibung |
 |--------|-------|------|-------------|
 | MIR-19 | Model Selection Guide | Medium | Benchmark-Datenbank, Complexity-Matrix (Seed-Metriken → Modell-Empfehlung), automatische Seed-Analyse. |
 | MIR-20 | Agent-Chat Fortschrittsanzeige | Low | Spinner/Typing-Indicator während Agent "nachdenkt" (2-3 Min bei 32b-Modellen). |
 | MIR-15 | Auto-Run Pipeline / Headless Mode | Low | Kurzfristig: Auto-Proceed nach Graph-Build. Langfristig: Vollständiger Headless-Modus für Batch-Runs. |
-| MIR-25 | `requestWithRetry` retried 4xx-Antworten | Low | 7s Verzögerung bei 409-Lock aus MIR-23, weil der globale Retry-Wrapper alle Fehler 3× versucht. Fix: 4xx-Status nicht retryen. Datei: `frontend/src/api/index.js:54-65`. |
-| MIR-26 | Ollama Modell-Eviction zwischen LLM- und Embedding-Calls | Medium | `qwen2.5:32b` wird trotz `MAX_LOADED_MODELS=3` aus dem RAM evictet (ollama ps zeigt `Stopping...`). ~80s/Persona statt ~10-30s. Fix: Pro-Request `keep_alive: 30m` im LLM-Client. |
-| MIR-27 | Persona-Routing: Custom Entity-Types defaulten zu Group | Medium | Custom Entity-Types aus Ontologie-Generierung (`DiabetesPatient`, `Diabetologist`, `KOLDiabetology`, ...) fallen durch beide hardcoded Listen → werden implizit als Group behandelt. Persons bekommen Account-Profil-Texte. Fix: Heuristische Erweiterung + Pflicht-`cardinality`-Feld in Ontology-Generation. |
 | MIR-28 | LLM-Compliance-Drift bei Persona-Sektionen | Medium | qwen2.5:32b ignoriert in ~1/3 der Fälle "MUST include ALL sections, 600-800 words" und liefert nur Mini-Absatz statt 9 Sektionen. Fix: Output-Length-Validierung im Backend mit Re-Prompt. |
 | MIR-29 | Report-Agent: englischer Drift trotz `OUTPUT_LANGUAGE=Deutsch` | Medium | Report-Sektionen ~10-15% englisch trotz deutscher Source-Daten. Quelle A (Seed-Headings) verschwindet mit deutschen Seeds; Quelle B (Rückübersetzungen aus deutschen Posts) ist eigener Bug. MIR-24 hat den Report-Agent nicht angefasst. |
 | MIR-30 | Wortgleiche Doppel-Posts in OASIS-Simulation | Low | Agent postet zeichengenau gleichen Text in verschiedenen Runden. Vermutlich OASIS/CAMEL-AI-internes Caching/Temperature-Problem. Workaround unklar — eventuell Upstream-Issue. |
-| MIR-31 | Cypher-Label-Sanitize zu rigide | Low | Multi-Word- und Mixed-Lang-Labels werden vom Sanitize-Regex abgewiesen statt normalisiert. 3 valide Entities pro Run gehen verloren. Fix: Normalisieren statt rejecten. |
+| MIR-32 | `keep_alive` von `num_ctx` entkoppeln | Medium | Aus Phase-A-Review (MIR-26): `keep_alive` wird aktuell nur gesetzt, wenn `_num_ctx` truthy ist. Bei `OLLAMA_NUM_CTX=0` würde es entfallen. Code-Klarheit, kein funktionaler Bug. |
+| MIR-33 | Substring-Kollision in Persona-Routing | Medium | Aus Phase-A-Review (MIR-27): Zusammengesetzte Custom-Types wie `Patient_Organization` matchen sowohl Individual- als auch Group-Substrings. Aktuell dominiert Individual (zuerst geprüft). Beobachten in Phase B, dann ggf. Tie-Break-Regel einführen. |
+| MIR-34 | Suffix-Edge-Cases in Persona-Routing-Listen dokumentieren | Low | Aus Phase-A-Review (MIR-27): `INDIVIDUAL_SUFFIXES = ("ist",)` matcht auch `List`/`Tourist`. `"ag"` in `GROUP_SUFFIXES` matcht auch `Tag`/`Bag`. Im Pharma/Medizin-Kontext nicht aufgetreten, aber Code-Comment zur Klarstellung sinnvoll. |
 
 ---
 
@@ -830,6 +833,10 @@ docker compose up -d
 | **Embedding-Dimension** | `neo4j_storage.py` | Nie Dimensionen hardcoden. `EmbeddingService.dimensions` auto-detected oder liest `EMBEDDING_DIMENSION` aus Config. Bei Modellwechsel migriert `_ensure_schema()` automatisch. |
 | **OUTPUT_LANGUAGE pro Feld** | `simulation_config_generator.py`, `oasis_profile_generator.py` | System-Prompt-only Strategie reicht nicht. Bei jedem textuellen Feld im JSON-Schema-Beispiel `(in {OUTPUT_LANGUAGE})` anhängen. System-Prompt sowohl am Anfang als auch am Ende des Prompt-Bodies wiederholen. Pflicht-Schema-Felder (`gender`, `country`, `mbti`) bewusst englisch belassen — sie werden von OASIS als Enums geprüft. Siehe MIR-24 Pattern. |
 | **Concurrent-Lock vor LLM-Pipelines** | `report.py` (Pattern, übertragbar) | Vor langen LLM-Pipelines im Backend prüfen, ob bereits ein Job für die gleiche Resource läuft. Status-Set `[PENDING, PLANNING, GENERATING]` → 409 zurückgeben. Frontend `onMounted`-Check (`/api/.../check/<id>`) für Reload-Resilienz. Re-Check vor teuren IPC-Calls (LLM-Helper können Minuten dauern, der Pre-Check-Snapshot ist dann veraltet). Siehe MIR-23 Pattern (3-Schichten-Lock). |
+| **Persona-Routing für Custom Entity-Types** | `oasis_profile_generator.py` | Hardcoded Listen reichen für Upstream-Generic-Types (`student, person, university, ngo`). Custom Ontologie-Typen (`Diabetologist`, `KOLDiabetology`) brauchen Substring- und Suffix-Matching mit Default-Fallback. Reihenfolge: Exakter Match → Substring → Suffix → Default Individual + Logger-Warning. Listen-Erweiterung statt komplette Neuschreibung erhält Backwards-Kompatibilität. Siehe MIR-27 Pattern. |
+| **Label-Normalisierung statt Reject** | `neo4j_storage.py:_sanitize_label()` | Bei LLM-generierten Cypher-Labels: Multi-Word, Slashes, Mixed-Lang sind häufig — Reject führt zu Daten-Verlust (3 Entities/Run). Lösung: Normalisieren (Word-Separator → Underscore, Diacritic-Mapping ä→ae, Leading-Digit-Prefix `L_`). Output: nur ASCII + Underscore — kein Backtick-Quoting nötig. Cypher-Injection-Sicherheit erhalten durch Whitelist-Char-Filter. 28 Unit-Tests in `backend/tests/test_neo4j_label_sanitize.py`. Siehe MIR-31. |
+| **Pure-Python-Asserts statt pytest** | `backend/tests/` | Aktuell ist pytest weder lokal noch im Container installiert (separates Anliegen). Bis das gefixt ist: Tests als pytest-formatierte Files schreiben (parametrize-Decorator) UND parallel via `python -c "from test_X import *; assert ..."` validieren. Beide Strategien funktionieren — pytest-Run kommt automatisch sobald `pytest` in `requirements-dev.txt`. |
+| **Retry nur bei transienten Fehlern** | `frontend/src/api/index.js` | Globale Retry-Wrapper sollten 4xx-Fehler nicht retryen — sind Logik-Fehler vom Server, kein transienter Zustand. 5xx und Network-Errors weiterhin retryen. Vor Implementierung: Backend-Audit aller 4xx-Returns durchführen, sicherstellen dass keiner einen transienten Zustand signalisiert. Siehe MIR-25. |
 
 ### 10.6 Neues Modell testen
 
@@ -884,6 +891,15 @@ docker compose up -d
   - Neuer Abschnitt 10.2: Projekt von Grund auf aufsetzen (Step-by-Step Setup-Anleitung)
   - Hardware-Hinweis in 4.1 ergänzt (M4 Max zusätzlich zu M2 Ultra)
   - Abschnittsnummern in Sektion 10 angepasst (10.2→10.3, 10.3→10.4, etc.)
+- **2026-05-06** — Ergänzungen aus Session 2026-05-06 (Phase-A Quick-Wins implementiert + Review):
+  - Abschnitt 2.1: 4 neue erledigte Tickets (Header `15 von 21` → `19 von 24`)
+    - MIR-25 (4xx-Skip in `requestWithRetry`) im Cluster Infrastruktur & DX
+    - MIR-26 (Ollama `keep_alive: 30m` pro Request, gleiches Pattern wie MIR-14) im Cluster Infrastruktur & DX
+    - MIR-27 (Persona-Routing-Heuristik mit Substring-/Suffix-Matching, Default-Fallback Individual + Logger-Warning) im Cluster Simulationsqualität
+    - MIR-31 (Cypher-Label-Sanitize: Normalisieren statt Rejecten, mit Diacritic-Mapping; 28 Unit-Tests) im Cluster Infrastruktur & DX
+  - Abschnitt 2.2: 3 neue Folge-Tickets aus Phase-A-Review (MIR-32 `keep_alive`-Entkopplung, MIR-33 Substring-Kollision-Beobachtung, MIR-34 Suffix-Edge-Cases doku) — alle nicht-blockierend für Phase-B
+  - Abschnitt 10.5: 5 neue Code-Patterns für Contributors (Persona-Routing für Custom Entity-Types, Label-Normalisierung statt Reject, Pure-Python-Asserts als pytest-Workaround, Retry nur bei transienten Fehlern)
+  - Phase-A-Branch `sweimar/mir-26-phase-a-quickwins` ist Merge-fertig nach Review (`approve-with-comments`); Tests grün, Acceptance-Kriterien für Phase-B-Test definiert
 - **2026-05-05** — Ergänzungen aus Session 2026-05-04/05 (i18n Phase 3 + Concurrent-Lock):
   - Abschnitt 2.1: MIR-24 (i18n Phase 3 — Pro-Feld OUTPUT_LANGUAGE-Verstärkung mit Hot-Topic-Differenzierung) und MIR-23 (Report-Concurrent-Lock + Interview-Status-Recheck) als erledigt eingetragen
   - Abschnitt 2.2: 7 neue offene Tickets (MIR-25 requestWithRetry-4xx, MIR-26 Modell-Eviction, MIR-27 Persona-Routing-Default, MIR-28 LLM-Compliance-Drift, MIR-29 Report-Agent EN-Drift, MIR-30 Doppel-Posts, MIR-31 Cypher-Sanitize)
