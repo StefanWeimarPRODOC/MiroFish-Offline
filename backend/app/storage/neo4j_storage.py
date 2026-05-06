@@ -29,18 +29,46 @@ from . import neo4j_schema
 
 logger = logging.getLogger('mirofish.neo4j_storage')
 
-# Only allow alphanumeric + underscore labels, starting with a letter.
-# Prevents Cypher injection via backtick-breaking in dynamic label queries.
-_SAFE_LABEL_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
+# Map common diacritics to ASCII so multi-language labels don't get rejected.
+_DIACRITIC_MAP = str.maketrans({
+    'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+    'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
+    'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'å': 'a',
+    'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+    'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+    'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o',
+    'ú': 'u', 'ù': 'u', 'û': 'u',
+    'ñ': 'n', 'ç': 'c',
+})
+
+# Whitespace, slash, dash → underscore so multi-word labels become a single token.
+_WORD_SEPARATORS_RE = re.compile(r'[\s/\\\-]+')
+
+# After folding + separator-replacement, drop anything that isn't a Cypher-safe char.
+_NON_LABEL_CHAR_RE = re.compile(r'[^A-Za-z0-9_]')
 
 
-def _sanitize_label(label: str) -> Optional[str]:
-    """Return label if safe for Cypher backtick quoting, else None."""
-    label = label.strip()
-    if _SAFE_LABEL_RE.match(label):
-        return label
-    logger.warning(f"Rejected unsafe Cypher label: {label!r}")
-    return None
+def _sanitize_label(label: Optional[str]) -> Optional[str]:
+    """Normalize a label to a Cypher-safe form (ASCII letters/digits/underscore).
+
+    Multi-word labels and labels with diacritics are normalized rather than rejected
+    so that valid entities like "Medication/Drug" or "GKV-Verband" survive ingestion.
+    Labels that start with a digit are prefixed with "L_" so the result is a valid
+    Cypher identifier even without backtick-quoting.
+
+    Returns None for empty input or input that produces no safe characters.
+    """
+    if not label:
+        return None
+    s = label.strip().translate(_DIACRITIC_MAP)
+    s = _WORD_SEPARATORS_RE.sub('_', s)
+    s = _NON_LABEL_CHAR_RE.sub('', s)
+    if not s:
+        logger.warning(f"Rejected unsafe Cypher label (no safe chars): {label!r}")
+        return None
+    if not s[0].isalpha():
+        s = f'L_{s}'
+    return s
 
 
 class Neo4jStorage(GraphStorage):

@@ -177,6 +177,21 @@ class OasisProfileGenerator:
         "university", "governmentagency", "organization", "ngo",
         "mediaoutlet", "company", "institution", "group", "community"
     ]
+
+    # Substring indicators (lowercased, matched anywhere in entity_type) — for custom
+    # ontology types like "DiabetesPatient" or "NovaSulinSalesRep" that don't appear
+    # in the hardcoded lists above. Catches multi-word and domain-specific variants.
+    INDIVIDUAL_SUBSTRINGS = (
+        "patient", "doctor", "physician", "nurse", "rep",
+        "kol", "expert", "specialist", "researcher", "scientist",
+    )
+    INDIVIDUAL_SUFFIXES = ("ist",)  # Diabetologist, Cardiologist, Specialist
+
+    GROUP_SUBSTRINGS = (
+        "verband", "kasse", "verein", "hospital", "klinik",
+        "corp", "ngo", "agency", "association", "foundation",
+    )
+    GROUP_SUFFIXES = ("ag", "gmbh", "inc", "ltd", "llc")
     
     def __init__(
         self,
@@ -438,12 +453,38 @@ class OasisProfileGenerator:
         return "\n\n".join(context_parts)
     
     def _is_individual_entity(self, entity_type: str) -> bool:
-        """Determine if entity is an individual type"""
-        return entity_type.lower() in self.INDIVIDUAL_ENTITY_TYPES
+        """Determine if entity is an individual type.
+
+        Checks (in order): exact match against INDIVIDUAL_ENTITY_TYPES, substring
+        match against INDIVIDUAL_SUBSTRINGS, suffix match against INDIVIDUAL_SUFFIXES.
+        """
+        if not entity_type:
+            return False
+        et = entity_type.lower()
+        if et in self.INDIVIDUAL_ENTITY_TYPES:
+            return True
+        if any(s in et for s in self.INDIVIDUAL_SUBSTRINGS):
+            return True
+        if any(et.endswith(s) for s in self.INDIVIDUAL_SUFFIXES):
+            return True
+        return False
 
     def _is_group_entity(self, entity_type: str) -> bool:
-        """Determine if entity is a group/institutional type"""
-        return entity_type.lower() in self.GROUP_ENTITY_TYPES
+        """Determine if entity is a group/institutional type.
+
+        Checks (in order): exact match against GROUP_ENTITY_TYPES, substring match
+        against GROUP_SUBSTRINGS, suffix match against GROUP_SUFFIXES.
+        """
+        if not entity_type:
+            return False
+        et = entity_type.lower()
+        if et in self.GROUP_ENTITY_TYPES:
+            return True
+        if any(s in et for s in self.GROUP_SUBSTRINGS):
+            return True
+        if any(et.endswith(s) for s in self.GROUP_SUFFIXES):
+            return True
+        return False
     
     def _generate_profile_with_llm(
         self,
@@ -462,6 +503,16 @@ class OasisProfileGenerator:
         """
 
         is_individual = self._is_individual_entity(entity_type)
+        is_group = self._is_group_entity(entity_type)
+
+        # Default-Fallback bei Unentscheidbarkeit: Individual statt Group
+        # (Person ist die häufigere realistische Annahme für unbekannte Custom-Types).
+        if not is_individual and not is_group:
+            logger.warning(
+                f"Unknown entity_type '{entity_type}' for entity '{entity_name}', "
+                "defaulting to individual persona"
+            )
+            is_individual = True
 
         if is_individual:
             prompt = self._build_individual_persona_prompt(
@@ -480,7 +531,10 @@ class OasisProfileGenerator:
             try:
                 extra_kwargs = {}
                 if self._is_ollama() and self._num_ctx:
-                    extra_kwargs["extra_body"] = {"options": {"num_ctx": self._num_ctx}}
+                    extra_kwargs["extra_body"] = {
+                        "options": {"num_ctx": self._num_ctx},
+                        "keep_alive": Config.OLLAMA_KEEP_ALIVE,
+                    }
 
                 response = self.client.chat.completions.create(
                     model=self.model_name,
