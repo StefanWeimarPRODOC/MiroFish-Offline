@@ -50,15 +50,21 @@ service.interceptors.response.use(
   }
 )
 
-// Request function with retry
+// Request function with retry. Only retries on 5xx and network/timeout errors —
+// 4xx responses are client errors (e.g. 409 concurrent-lock from MIR-23) that the
+// server rejects on logic grounds, so retrying just adds 7s of dead waiting.
 export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 1000) => {
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await requestFn()
     } catch (error) {
+      const status = error?.response?.status
+      if (status && status >= 400 && status < 500) {
+        throw error
+      }
       if (i === maxRetries - 1) throw error
 
-      console.warn(`Request failed, retrying (${i + 1}/${maxRetries})...`)
+      console.warn(`Request failed (status: ${status || 'network'}), retrying (${i + 1}/${maxRetries})...`)
       await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)))
     }
   }
